@@ -20,7 +20,7 @@ pub fn init_database(db_path: &str) -> Result<Connection, rusqlite::Error> {
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
     
     // Load and execute schema
-    let schema = include_str!("../schema.sql");
+    let schema = include_str!("schema.sql");
     conn.execute_batch(schema)?;
     
     Ok(conn)

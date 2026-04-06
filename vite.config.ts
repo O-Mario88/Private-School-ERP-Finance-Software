@@ -22,10 +22,16 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'query-vendor': ['@tanstack/react-query'],
-          'ui-vendor': ['recharts', 'tailwindcss'],
+        manualChunks: (id) => {
+          if (id.includes('node_modules/react')) {
+            return 'react-vendor';
+          }
+          if (id.includes('node_modules/@tanstack/react-query')) {
+            return 'query-vendor';
+          }
+          if (id.includes('node_modules/recharts') || id.includes('node_modules/tailwindcss')) {
+            return 'ui-vendor';
+          }
         },
       },
     },

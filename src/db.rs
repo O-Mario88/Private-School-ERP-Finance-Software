@@ -19,6 +19,8 @@ impl Database {
 
     /// Create a new event in the event log
     pub fn create_event(&self, event: &models::FinancialEvent) -> SqliteResult<()> {
+        let data_json = serde_json::to_string(&event.data).unwrap_or_default();
+        
         self.conn.execute(
             "INSERT INTO events (id, event_type, aggregate_id, aggregate_version, timestamp, user_id, device_id, data, sync_status) 
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -30,7 +32,7 @@ impl Database {
                 &event.timestamp,
                 &event.user_id,
                 &event.device_id,
-                &event.data,
+                &data_json,
                 &event.sync_status,
             ],
         )?;
@@ -45,6 +47,9 @@ impl Database {
         )?;
 
         let events = stmt.query_map([], |row| {
+            let data_str: String = row.get(7)?;
+            let data = serde_json::from_str(&data_str).unwrap_or_default();
+            
             Ok(models::FinancialEvent {
                 id: row.get(0)?,
                 event_type: row.get(1)?,
@@ -53,7 +58,7 @@ impl Database {
                 timestamp: row.get(4)?,
                 user_id: row.get(5)?,
                 device_id: row.get(6)?,
-                data: row.get::<_, String>(7)?.parse().unwrap_or_default(),
+                data,
                 sync_status: row.get(8)?,
             })
         })?;
