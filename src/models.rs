@@ -130,3 +130,14 @@ pub struct ChartOfAccounts {
     pub parent_id: Option<String>,
     pub is_active: bool,
 }
+
+/// Student statement showing total invoiced and paid amounts
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StudentStatement {
+    pub student_id: String,
+    pub total_invoiced: f64,
+    pub total_paid: f64,
+    pub balance_due: f64,
+    pub last_payment_date: Option<i64>,
+    pub statement_generated_date: i64,
+}

@@ -353,3 +353,159 @@ impl JournalEntryService {
         Ok(report)
     }
 }
+
+pub struct InvoiceService;
+
+impl InvoiceService {
+    /// Generate invoices for multiple students
+    pub fn generate_invoices(
+        user_id: String,
+        student_ids: Vec<String>,
+        family_id: String,
+        invoice_date: String,
+        due_date: String,
+        amount: f64,
+        invoice_type: String,
+        description: String,
+    ) -> Result<Vec<models::FinancialEvent>, String> {
+        // Validate inputs
+        ValidationService::validate_amount(amount)?;
+        ValidationService::validate_date(&invoice_date)?;
+        ValidationService::validate_date(&due_date)?;
+
+        if student_ids.is_empty() {
+            return Err("At least one student must be selected".to_string());
+        }
+
+        if description.trim().is_empty() {
+            return Err("Description is required".to_string());
+        }
+
+        // Create invoice event for each student
+        let mut events = Vec::new();
+        let timestamp = chrono::Utc::now().timestamp_millis();
+
+        for student_id in student_ids {
+            let invoice_id = Uuid::new_v4().to_string();
+            let invoice_number = format!("INV-{}", chrono::Utc::now().timestamp());
+
+            let data = json!({
+                "invoice_id": invoice_id,
+                "invoice_number": invoice_number,
+                "student_id": student_id,
+                "family_id": family_id,
+                "invoice_date": invoice_date,
+                "due_date": due_date,
+                "amount": amount,
+                "paid_amount": 0.0,
+                "balance_amount": amount,
+                "invoice_type": invoice_type,
+                "description": description,
+                "status": "issued",
+                "approval_status": "pending",
+                "lines": [{
+                    "line_description": description,
+                    "quantity": 1,
+                    "rate": amount,
+                    "amount": amount,
+                }]
+            });
+
+            let event = models::FinancialEvent {
+                id: Uuid::new_v4().to_string(),
+                event_type: "invoice_created".to_string(),
+                aggregate_id: invoice_id,
+                aggregate_version: 1,
+                timestamp,
+                user_id: user_id.clone(),
+                device_id: None,
+                data: serde_json::from_value(data).unwrap(),
+                sync_status: "local".to_string(),
+            };
+
+            events.push(event);
+        }
+
+        Ok(events)
+    }
+
+    /// Post payment against an invoice
+    pub fn post_payment(
+        user_id: String,
+        invoice_id: String,
+        payment_amount: f64,
+        payment_date: String,
+        payment_method: String,
+        reference: String,
+    ) -> Result<models::FinancialEvent, String> {
+        // Validate inputs
+        ValidationService::validate_amount(payment_amount)?;
+        ValidationService::validate_date(&payment_date)?;
+
+        if payment_method.trim().is_empty() {
+            return Err("Payment method is required".to_string());
+        }
+
+        let payment_id = Uuid::new_v4().to_string();
+        let timestamp = chrono::Utc::now().timestamp_millis();
+
+        let data = json!({
+            "payment_id": payment_id,
+            "invoice_id": invoice_id,
+            "payment_amount": payment_amount,
+            "payment_date": payment_date,
+            "payment_method": payment_method,
+            "reference": reference,
+            "status": "posted",
+            "posted_date": chrono::Utc::now().to_rfc3339(),
+        });
+
+        Ok(models::FinancialEvent {
+            id: Uuid::new_v4().to_string(),
+            event_type: "payment_posted".to_string(),
+            aggregate_id: payment_id,
+            aggregate_version: 1,
+            timestamp,
+            user_id,
+            device_id: None,
+            data: serde_json::from_value(data).unwrap(),
+            sync_status: "local".to_string(),
+        })
+    }
+
+    /// Generate student statement (list of invoices and payments)
+    pub fn generate_student_statement(
+        student_id: String,
+        invoices: Vec<models::FinancialEvent>,
+        payments: Vec<models::FinancialEvent>,
+    ) -> Result<models::StudentStatement, String> {
+        // Aggregate student invoices and payments
+        let mut total_invoiced = 0.0;
+        let mut total_paid = 0.0;
+
+        for event in invoices {
+            if let Ok(amount) = serde_json::from_value::<f64>(
+                event.data.get("amount").cloned().unwrap_or(json!(0.0))
+            ) {
+                total_invoiced += amount;
+            }
+        }
+
+        for event in payments {
+            if let Ok(amount) = serde_json::from_value::<f64>(
+                event.data.get("payment_amount").cloned().unwrap_or(json!(0.0))
+            ) {
+                total_paid += amount;
+            }
+        }
+
+        Ok(models::StudentStatement {
+            student_id,
+            total_invoiced,
+            total_paid,
+            balance_due: total_invoiced - total_paid,
+            last_payment_date: None,
+            statement_generated_date: chrono::Utc::now().timestamp_millis(),
+        })
+    }
+}
