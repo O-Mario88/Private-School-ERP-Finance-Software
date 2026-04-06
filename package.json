@@ -1,0 +1,42 @@
+{
+  "name": "maple-erp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri-dev": "tauri dev",
+    "tauri-build": "tauri build"
+  },
+  "keywords": ["school", "finance", "erp", "accounting"],
+  "author": "MAPLE ERP Team",
+  "license": "Proprietary",
+  "dependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "@babel/preset-typescript": "^7.28.5",
+    "@tanstack/react-query": "^5.96.2",
+    "@types/node": "^25.5.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "babel-loader": "^10.1.1",
+    "css-loader": "^7.1.4",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.14.0",
+    "recharts": "^3.8.1",
+    "style-loader": "^4.0.0",
+    "tailwindcss": "^4.2.2",
+    "ts-loader": "^9.5.7",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.4",
+    "webpack": "^5.105.4",
+    "webpack-cli": "^7.0.2",
+    "webpack-dev-server": "^5.2.3",
+    "zustand": "^5.0.12"
+  }
+}

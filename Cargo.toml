@@ -1,0 +1,20 @@
+[package]
+name = "maple-erp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["full"] }
+rusqlite = { version = "0.30", features = ["bundled_blobtree", "chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+bcrypt = "0.15"
+jsonwebtoken = "9.0"
+reqwest = { version = "0.11", features = ["json"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+thiserror = "1.0"
+anyhow = "1.0"
+dotenv = "0.15"
