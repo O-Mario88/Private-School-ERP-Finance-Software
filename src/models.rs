@@ -141,3 +141,18 @@ pub struct StudentStatement {
     pub last_payment_date: Option<i64>,
     pub statement_generated_date: i64,
 }
+
+/// Receipt for payment
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Receipt {
+    pub id: String,
+    pub receipt_number: String,
+    pub invoice_id: String,
+    pub payment_amount: f64,
+    pub payment_date: i64,
+    pub payment_method: String,
+    pub reference: String,
+    pub status: String,
+    pub issued_by: String,
+    pub issued_date: i64,
+}
