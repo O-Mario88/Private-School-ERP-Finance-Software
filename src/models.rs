@@ -96,3 +96,37 @@ pub struct SyncConflict {
     pub remote_event_version: i32,
     pub resolution_required: bool,
 }
+
+/// Trial balance row for reporting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrialBalanceRow {
+    pub account_code: String,
+    pub account_name: String,
+    pub account_type: String,
+    pub debit_amount: f64,
+    pub credit_amount: f64,
+}
+
+
+/// GL posting report row
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GLReportRow {
+    pub entry_id: String,
+    pub entry_date: String,
+    pub account_code: String,
+    pub account_name: String,
+    pub description: String,
+    pub debit_amount: f64,
+    pub credit_amount: f64,
+}
+
+/// Chart of accounts master data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChartOfAccounts {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub account_type: String,
+    pub parent_id: Option<String>,
+    pub is_active: bool,
+}
