@@ -39,15 +39,34 @@ function NotificationToast({ notification, onClose }: NotificationToastProps) {
     return () => clearTimeout(timer);
   }, [onClose]);
 
-  const getStyles = () => {
-    const baseStyles = 'flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg animate-slide-in';
-    const typeStyles = {
-      success: 'bg-green-100 text-green-800',
-      error: 'bg-red-100 text-red-800',
-      warning: 'bg-yellow-100 text-yellow-800',
-      info: 'bg-blue-100 text-blue-800',
+  const getStyles = (): React.CSSProperties => {
+    const borderColors = {
+      success: 'rgba(16, 185, 129, 0.4)',
+      error: 'rgba(239, 68, 68, 0.4)',
+      warning: 'rgba(245, 158, 11, 0.4)',
+      info: 'rgba(56, 189, 248, 0.4)',
     };
-    return `${baseStyles} ${typeStyles[notification.type]}`;
+    const glowColors = {
+      success: 'rgba(16, 185, 129, 0.1)',
+      error: 'rgba(239, 68, 68, 0.1)',
+      warning: 'rgba(245, 158, 11, 0.1)',
+      info: 'rgba(56, 189, 248, 0.1)',
+    };
+    return {
+      background: 'rgba(15, 29, 50, 0.9)',
+      backdropFilter: 'blur(24px)',
+      WebkitBackdropFilter: 'blur(24px)',
+      border: `1px solid ${borderColors[notification.type]}`,
+      boxShadow: `0 10px 40px rgba(0,0,0,0.4), 0 0 20px ${glowColors[notification.type]}`,
+      borderRadius: '1rem',
+    };
+  };
+
+  const textColors = {
+    success: '#6ee7b7',
+    error: '#fca5a5',
+    warning: '#fcd34d',
+    info: '#7dd3fc',
   };
 
   const icons = {
@@ -58,12 +77,15 @@ function NotificationToast({ notification, onClose }: NotificationToastProps) {
   };
 
   return (
-    <div className={getStyles()}>
-      <span className="text-lg font-bold">{icons[notification.type]}</span>
-      <span className="flex-1">{notification.message}</span>
+    <div className="flex items-center gap-3 px-4 py-3" style={getStyles()}>
+      <span className="text-lg font-bold" style={{ color: textColors[notification.type] }}>{icons[notification.type]}</span>
+      <span className="flex-1" style={{ color: 'var(--text-primary)' }}>{notification.message}</span>
       <button
         onClick={onClose}
-        className="text-lg opacity-60 hover:opacity-100 transition-opacity"
+        className="text-lg transition-opacity"
+        style={{ color: 'var(--text-muted)', opacity: 0.6 }}
+        onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.6'; }}
       >
         ×
       </button>

@@ -11,13 +11,19 @@
     "tauri-dev": "tauri dev",
     "tauri-build": "tauri build"
   },
-  "keywords": ["school", "finance", "erp", "accounting"],
+  "keywords": [
+    "school",
+    "finance",
+    "erp",
+    "accounting"
+  ],
   "author": "MAPLE ERP Team",
   "license": "Proprietary",
   "dependencies": {
     "@babel/core": "^7.29.0",
     "@babel/preset-react": "^7.28.5",
     "@babel/preset-typescript": "^7.28.5",
+    "@tailwindcss/vite": "^4.2.2",
     "@tanstack/react-query": "^5.96.2",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",

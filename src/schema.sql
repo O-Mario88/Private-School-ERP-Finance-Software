@@ -414,6 +414,485 @@ CREATE TABLE IF NOT EXISTS period_close_logs (
 );
 
 -- ============================================================================
+-- PHASE 2: SCHOOL CORE - FEE RULES ENGINE, TRANSPORT, INVENTORY, BURSARY
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS fee_rules (
+  id TEXT PRIMARY KEY,
+  school_id TEXT,
+  class_id TEXT REFERENCES classes(id),
+  term TEXT,
+  fee_type TEXT NOT NULL, -- "tuition", "activity", etc.
+  amount DECIMAL(12, 2) NOT NULL,
+  effective_date DATE NOT NULL,
+  end_date DATE,
+  active BOOLEAN DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  modified_at TIMESTAMP,
+  modified_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS fee_discounts (
+  id TEXT PRIMARY KEY,
+  fee_rule_id TEXT NOT NULL REFERENCES fee_rules(id),
+  discount_type TEXT NOT NULL, -- "scholarship", "sibling", "early_bird", "exemption"
+  discount_value DECIMAL(12, 2) NOT NULL,
+  is_percentage BOOLEAN DEFAULT 0,
+  max_students INTEGER,
+  max_discount_amount DECIMAL(12, 2),
+  active BOOLEAN DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS transport_routes (
+  id TEXT PRIMARY KEY,
+  route_name TEXT NOT NULL,
+  cost_per_month DECIMAL(12, 2) NOT NULL,
+  pickup_points TEXT, -- JSON array of locations
+  driver_name TEXT,
+  vehicle_registration TEXT,
+  active BOOLEAN DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS student_transport_assignments (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL REFERENCES students(id),
+  route_id TEXT NOT NULL REFERENCES transport_routes(id),
+  term TEXT NOT NULL,
+  active BOOLEAN DEFAULT 1,
+  assigned_date DATE DEFAULT CURRENT_DATE,
+  assigned_by TEXT NOT NULL REFERENCES users(id),
+  UNIQUE(student_id, route_id, term)
+);
+
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id TEXT PRIMARY KEY,
+  item_name TEXT NOT NULL,
+  item_type TEXT NOT NULL, -- "uniform", "book", "stationery"
+  unit_cost DECIMAL(12, 2) NOT NULL,
+  quantity_on_hand INTEGER DEFAULT 0,
+  reorder_level INTEGER,
+  supplier_name TEXT,
+  active BOOLEAN DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS inventory_allocations (
+  id TEXT PRIMARY KEY,
+  inventory_item_id TEXT NOT NULL REFERENCES inventory_items(id),
+  class_id TEXT REFERENCES classes(id),
+  term TEXT,
+  quantity INTEGER NOT NULL,
+  unit_cost DECIMAL(12, 2) NOT NULL,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bursary_requests (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL REFERENCES students(id),
+  amount_requested DECIMAL(12, 2) NOT NULL,
+  justification TEXT,
+  request_date DATE DEFAULT CURRENT_DATE,
+  status TEXT DEFAULT 'submitted', -- "submitted", "approved", "rejected", "disbursed"
+  created_by TEXT NOT NULL REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS bursary_approvals (
+  id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL REFERENCES bursary_requests(id),
+  approver_id TEXT NOT NULL REFERENCES users(id),
+  approved_amount DECIMAL(12, 2) NOT NULL,
+  approval_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  notes TEXT,
+  effective_date DATE
+);
+
+CREATE TABLE IF NOT EXISTS payment_plans (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL REFERENCES students(id),
+  invoice_id TEXT REFERENCES student_invoices(id),
+  plan_start_date DATE NOT NULL,
+  installment_amount DECIMAL(12, 2) NOT NULL,
+  num_installments INTEGER NOT NULL,
+  status TEXT DEFAULT 'active', -- "active", "completed", "defaulted"
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payment_plan_installments (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES payment_plans(id),
+  installment_number INTEGER NOT NULL,
+  due_date DATE NOT NULL,
+  amount DECIMAL(12, 2) NOT NULL,
+  paid_date DATE,
+  payment_id TEXT REFERENCES payments(id),
+  status TEXT DEFAULT 'pending', -- "pending", "paid", "overdue"
+  UNIQUE(plan_id, installment_number)
+);
+
+CREATE TABLE IF NOT EXISTS follow_up_activities (
+  id TEXT PRIMARY KEY,
+  student_id TEXT NOT NULL REFERENCES students(id),
+  staff_id TEXT NOT NULL REFERENCES users(id),
+  activity_type TEXT NOT NULL, -- "call", "email", "in_person"
+  activity_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  notes TEXT,
+  outcome TEXT, -- "promised_payment", "promised_plan", "no_response", "obstacle"
+  next_follow_up_date DATE
+);
+
+-- Indexes for Phase 2 tables
+CREATE INDEX idx_fee_rules_class_term ON fee_rules(class_id, term);
+CREATE INDEX idx_fee_discounts_rule ON fee_discounts(fee_rule_id);
+CREATE INDEX idx_transport_assignments_student ON student_transport_assignments(student_id);
+CREATE INDEX idx_transport_assignments_term ON student_transport_assignments(term);
+CREATE INDEX idx_inventory_allocations_class_term ON inventory_allocations(class_id, term);
+CREATE INDEX idx_bursary_requests_student ON bursary_requests(student_id);
+CREATE INDEX idx_bursary_requests_status ON bursary_requests(status);
+CREATE INDEX idx_payment_plans_student ON payment_plans(student_id);
+CREATE INDEX idx_payment_plans_status ON payment_plans(status);
+CREATE INDEX idx_payment_plan_installments_status ON payment_plan_installments(status);
+CREATE INDEX idx_follow_ups_student ON follow_up_activities(student_id);
+
+-- ============================================================================
+-- PHASE 3: ENTERPRISE BACKBONE - PAYROLL, AP, ASSETS, TREASURY, BUDGET
+-- ============================================================================
+
+-- 3.1 Payroll Module
+CREATE TABLE IF NOT EXISTS employees (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id),
+  employee_number TEXT UNIQUE NOT NULL,
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  department TEXT NOT NULL,
+  position TEXT NOT NULL,
+  hire_date DATE NOT NULL,
+  termination_date DATE,
+  bank_name TEXT,
+  bank_account_number TEXT,
+  bank_branch TEXT,
+  kra_pin TEXT,
+  nhif_number TEXT,
+  nssf_number TEXT,
+  salary_structure_id TEXT REFERENCES salary_structures(id),
+  status TEXT DEFAULT 'active' CHECK(status IN ('active', 'on_leave', 'terminated', 'suspended')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS salary_structures (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  grade_level TEXT,
+  basic_salary DECIMAL(12, 2) NOT NULL,
+  housing_allowance DECIMAL(12, 2) DEFAULT 0,
+  transport_allowance DECIMAL(12, 2) DEFAULT 0,
+  medical_allowance DECIMAL(12, 2) DEFAULT 0,
+  other_allowances DECIMAL(12, 2) DEFAULT 0,
+  gross_salary DECIMAL(12, 2) NOT NULL,
+  effective_date DATE NOT NULL,
+  active BOOLEAN DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS deduction_types (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  category TEXT NOT NULL CHECK(category IN ('statutory', 'voluntary', 'loan')),
+  is_percentage BOOLEAN DEFAULT 0,
+  default_value DECIMAL(12, 2) DEFAULT 0,
+  max_amount DECIMAL(12, 2),
+  active BOOLEAN DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS employee_deductions (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id),
+  deduction_type_id TEXT NOT NULL REFERENCES deduction_types(id),
+  amount DECIMAL(12, 2) NOT NULL,
+  is_percentage BOOLEAN DEFAULT 0,
+  start_date DATE NOT NULL,
+  end_date DATE,
+  active BOOLEAN DEFAULT 1,
+  UNIQUE(employee_id, deduction_type_id)
+);
+
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id TEXT PRIMARY KEY,
+  pay_period TEXT NOT NULL,
+  run_date DATE NOT NULL,
+  total_gross DECIMAL(12, 2) DEFAULT 0,
+  total_deductions DECIMAL(12, 2) DEFAULT 0,
+  total_net DECIMAL(12, 2) DEFAULT 0,
+  employee_count INTEGER DEFAULT 0,
+  journal_entry_id TEXT,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'calculated', 'approved', 'posted', 'reversed')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  approved_by TEXT REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS payroll_items (
+  id TEXT PRIMARY KEY,
+  payroll_run_id TEXT NOT NULL REFERENCES payroll_runs(id),
+  employee_id TEXT NOT NULL REFERENCES employees(id),
+  basic_salary DECIMAL(12, 2) NOT NULL,
+  total_allowances DECIMAL(12, 2) DEFAULT 0,
+  gross_salary DECIMAL(12, 2) NOT NULL,
+  paye DECIMAL(12, 2) DEFAULT 0,
+  nhif DECIMAL(12, 2) DEFAULT 0,
+  nssf DECIMAL(12, 2) DEFAULT 0,
+  other_deductions DECIMAL(12, 2) DEFAULT 0,
+  total_deductions DECIMAL(12, 2) DEFAULT 0,
+  net_salary DECIMAL(12, 2) NOT NULL,
+  UNIQUE(payroll_run_id, employee_id)
+);
+
+-- 3.2 Accounts Payable
+CREATE TABLE IF NOT EXISTS suppliers (
+  id TEXT PRIMARY KEY,
+  supplier_name TEXT NOT NULL,
+  contact_person TEXT,
+  email TEXT,
+  phone TEXT,
+  address TEXT,
+  kra_pin TEXT,
+  bank_name TEXT,
+  bank_account_number TEXT,
+  bank_branch TEXT,
+  payment_terms_days INTEGER DEFAULT 30,
+  credit_limit DECIMAL(12, 2),
+  status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'blacklisted')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS supplier_invoices (
+  id TEXT PRIMARY KEY,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+  invoice_number TEXT NOT NULL,
+  invoice_date DATE NOT NULL,
+  due_date DATE NOT NULL,
+  total_amount DECIMAL(12, 2) NOT NULL,
+  paid_amount DECIMAL(12, 2) DEFAULT 0,
+  balance_amount DECIMAL(12, 2) NOT NULL,
+  tax_amount DECIMAL(12, 2) DEFAULT 0,
+  journal_entry_id TEXT,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'approved', 'partially_paid', 'paid', 'cancelled')),
+  notes TEXT,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS supplier_invoice_items (
+  id TEXT PRIMARY KEY,
+  supplier_invoice_id TEXT NOT NULL REFERENCES supplier_invoices(id),
+  description TEXT NOT NULL,
+  gl_account_id TEXT REFERENCES accounts(id),
+  quantity DECIMAL(10, 2) DEFAULT 1,
+  unit_price DECIMAL(12, 2) NOT NULL,
+  line_amount DECIMAL(12, 2) NOT NULL,
+  tax_amount DECIMAL(12, 2) DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS payment_runs_ap (
+  id TEXT PRIMARY KEY,
+  run_date DATE NOT NULL,
+  total_amount DECIMAL(12, 2) DEFAULT 0,
+  supplier_count INTEGER DEFAULT 0,
+  bank_account_id TEXT REFERENCES bank_accounts(id),
+  journal_entry_id TEXT,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'approved', 'processed', 'reversed')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS supplier_payments (
+  id TEXT PRIMARY KEY,
+  payment_run_id TEXT REFERENCES payment_runs_ap(id),
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+  supplier_invoice_id TEXT REFERENCES supplier_invoices(id),
+  amount DECIMAL(12, 2) NOT NULL,
+  payment_method TEXT NOT NULL,
+  reference_number TEXT,
+  payment_date DATE NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processed', 'reversed')),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3.3 Fixed Assets
+CREATE TABLE IF NOT EXISTS asset_categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  depreciation_method TEXT DEFAULT 'straight_line' CHECK(depreciation_method IN ('straight_line', 'reducing_balance')),
+  default_useful_life_months INTEGER NOT NULL,
+  default_residual_percentage DECIMAL(5, 2) DEFAULT 0,
+  depreciation_account_id TEXT REFERENCES accounts(id),
+  accumulated_depreciation_account_id TEXT REFERENCES accounts(id),
+  asset_account_id TEXT REFERENCES accounts(id),
+  active BOOLEAN DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS fixed_assets (
+  id TEXT PRIMARY KEY,
+  asset_number TEXT UNIQUE NOT NULL,
+  description TEXT NOT NULL,
+  category_id TEXT NOT NULL REFERENCES asset_categories(id),
+  acquisition_date DATE NOT NULL,
+  acquisition_cost DECIMAL(12, 2) NOT NULL,
+  residual_value DECIMAL(12, 2) DEFAULT 0,
+  useful_life_months INTEGER NOT NULL,
+  depreciation_method TEXT DEFAULT 'straight_line' CHECK(depreciation_method IN ('straight_line', 'reducing_balance')),
+  accumulated_depreciation DECIMAL(12, 2) DEFAULT 0,
+  net_book_value DECIMAL(12, 2) NOT NULL,
+  location TEXT,
+  campus_id TEXT REFERENCES campuses(id),
+  status TEXT DEFAULT 'active' CHECK(status IN ('active', 'disposed', 'written_off', 'fully_depreciated')),
+  disposed_date DATE,
+  disposal_proceeds DECIMAL(12, 2),
+  disposal_gain_loss DECIMAL(12, 2),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS depreciation_schedule (
+  id TEXT PRIMARY KEY,
+  asset_id TEXT NOT NULL REFERENCES fixed_assets(id),
+  period TEXT NOT NULL,
+  depreciation_amount DECIMAL(12, 2) NOT NULL,
+  accumulated_depreciation DECIMAL(12, 2) NOT NULL,
+  net_book_value DECIMAL(12, 2) NOT NULL,
+  journal_entry_id TEXT,
+  posted_date DATE,
+  UNIQUE(asset_id, period)
+);
+
+-- 3.4 Treasury & Cash Management
+CREATE TABLE IF NOT EXISTS cash_forecasts (
+  id TEXT PRIMARY KEY,
+  forecast_date DATE NOT NULL,
+  category TEXT NOT NULL CHECK(category IN ('ar_inflow', 'ap_outflow', 'payroll', 'other_inflow', 'other_outflow')),
+  description TEXT,
+  projected_amount DECIMAL(12, 2) NOT NULL,
+  actual_amount DECIMAL(12, 2),
+  variance DECIMAL(12, 2),
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS bank_transfers (
+  id TEXT PRIMARY KEY,
+  from_bank_account_id TEXT NOT NULL REFERENCES bank_accounts(id),
+  to_bank_account_id TEXT NOT NULL REFERENCES bank_accounts(id),
+  amount DECIMAL(12, 2) NOT NULL,
+  transfer_date DATE NOT NULL,
+  reference_number TEXT,
+  journal_entry_id TEXT,
+  status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'reversed')),
+  notes TEXT,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3.5 Budget Module
+CREATE TABLE IF NOT EXISTS budgets (
+  id TEXT PRIMARY KEY,
+  fiscal_year TEXT NOT NULL,
+  name TEXT NOT NULL,
+  version INTEGER DEFAULT 1,
+  total_amount DECIMAL(14, 2) DEFAULT 0,
+  status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'submitted', 'approved', 'active', 'closed')),
+  approved_by TEXT REFERENCES users(id),
+  approved_date DATE,
+  notes TEXT,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS budget_lines (
+  id TEXT PRIMARY KEY,
+  budget_id TEXT NOT NULL REFERENCES budgets(id),
+  gl_account_id TEXT NOT NULL REFERENCES accounts(id),
+  period TEXT NOT NULL,
+  budgeted_amount DECIMAL(12, 2) NOT NULL,
+  revised_amount DECIMAL(12, 2),
+  actual_amount DECIMAL(12, 2) DEFAULT 0,
+  variance DECIMAL(12, 2) DEFAULT 0,
+  notes TEXT,
+  UNIQUE(budget_id, gl_account_id, period)
+);
+
+CREATE TABLE IF NOT EXISTS budget_revisions (
+  id TEXT PRIMARY KEY,
+  budget_id TEXT NOT NULL REFERENCES budgets(id),
+  gl_account_id TEXT NOT NULL REFERENCES accounts(id),
+  period TEXT NOT NULL,
+  previous_amount DECIMAL(12, 2) NOT NULL,
+  new_amount DECIMAL(12, 2) NOT NULL,
+  reason TEXT NOT NULL,
+  approved_by TEXT REFERENCES users(id),
+  revision_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3.6 Multi-Campus & Policy
+CREATE TABLE IF NOT EXISTS campuses (
+  id TEXT PRIMARY KEY,
+  campus_name TEXT NOT NULL,
+  campus_code TEXT UNIQUE NOT NULL,
+  address TEXT,
+  phone TEXT,
+  email TEXT,
+  principal_name TEXT,
+  is_main_campus BOOLEAN DEFAULT 0,
+  active BOOLEAN DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS policy_rules (
+  id TEXT PRIMARY KEY,
+  rule_name TEXT NOT NULL,
+  category TEXT NOT NULL CHECK(category IN ('spending', 'approval', 'payroll', 'budget', 'general')),
+  condition_field TEXT NOT NULL,
+  condition_operator TEXT NOT NULL CHECK(condition_operator IN ('>', '<', '>=', '<=', '=', '!=')),
+  condition_value DECIMAL(14, 2) NOT NULL,
+  action TEXT NOT NULL CHECK(action IN ('require_approval', 'block', 'warn', 'auto_approve')),
+  required_role TEXT,
+  campus_id TEXT REFERENCES campuses(id),
+  active BOOLEAN DEFAULT 1,
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Phase 3 Indexes
+CREATE INDEX idx_employees_department ON employees(department);
+CREATE INDEX idx_employees_status ON employees(status);
+CREATE INDEX idx_payroll_items_run ON payroll_items(payroll_run_id);
+CREATE INDEX idx_payroll_runs_period ON payroll_runs(pay_period);
+CREATE INDEX idx_suppliers_status ON suppliers(status);
+CREATE INDEX idx_supplier_invoices_supplier ON supplier_invoices(supplier_id);
+CREATE INDEX idx_supplier_invoices_status ON supplier_invoices(status);
+CREATE INDEX idx_supplier_invoices_due ON supplier_invoices(due_date);
+CREATE INDEX idx_supplier_payments_supplier ON supplier_payments(supplier_id);
+CREATE INDEX idx_fixed_assets_category ON fixed_assets(category_id);
+CREATE INDEX idx_fixed_assets_status ON fixed_assets(status);
+CREATE INDEX idx_depreciation_schedule_asset ON depreciation_schedule(asset_id);
+CREATE INDEX idx_budget_lines_budget ON budget_lines(budget_id);
+CREATE INDEX idx_budget_lines_account ON budget_lines(gl_account_id);
+CREATE INDEX idx_policy_rules_category ON policy_rules(category);
+
+-- ============================================================================
 -- VIEWS FOR CALCULATED BALANCES
 -- ============================================================================
 

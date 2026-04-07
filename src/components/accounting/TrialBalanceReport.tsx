@@ -118,8 +118,8 @@ export const TrialBalanceReport: React.FC<{ journalEntries: JournalEntry[] }> = 
             <thead>
               <tr className="border-b-2 border-gray-900">
                 <th className="text-left px-2 py-2 font-bold">Account ID</th>
-                <th className="text-right px-2 py-2 font-bold">Debit (KES)</th>
-                <th className="text-right px-2 py-2 font-bold">Credit (KES)</th>
+                <th className="text-right px-2 py-2 font-bold">Debit (UGX)</th>
+                <th className="text-right px-2 py-2 font-bold">Credit (UGX)</th>
               </tr>
             </thead>
             <tbody>
@@ -146,7 +146,7 @@ export const TrialBalanceReport: React.FC<{ journalEntries: JournalEntry[] }> = 
         </div>
 
         <div className={`mb-6 p-4 rounded-lg text-center font-bold ${isBalanced ? 'bg-green-100 text-green-900' : 'bg-red-100 text-red-900'}`}>
-          {isBalanced ? '✓ BALANCED' : '✗ NOT BALANCED'} (Difference: KES {Math.abs(totalDebits - totalCredits).toFixed(2)})
+          {isBalanced ? '✓ BALANCED' : '✗ NOT BALANCED'} (Difference: UGX {Math.abs(totalDebits - totalCredits).toFixed(2)})
         </div>
       </div>
     </div>

@@ -17,7 +17,7 @@ export default function Layout({ children }: LayoutProps) {
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen" style={{ background: 'var(--bg-deep)' }}>
       {/* Sidebar */}
       <Sidebar />
 
@@ -27,7 +27,7 @@ export default function Layout({ children }: LayoutProps) {
         <Header />
 
         {/* Page Content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto" style={{ position: 'relative', zIndex: 1 }}>
           {children}
         </main>
       </div>

@@ -23,32 +23,33 @@ export default function Header() {
   };
 
   return (
-    <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
+    <header
+      className="px-8 py-4 flex items-center justify-between"
+      style={{
+        background: 'rgba(10, 22, 40, 0.6)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
+      }}
+    >
       {/* Left Section - Toggle & Search */}
       <div className="flex items-center gap-4 flex-1">
         <button
           onClick={() => setSidebarOpen(!isSidebarOpen)}
-          className="p-2 hover:bg-gray-100 rounded-md transition-colors"
+          className="p-2 rounded-xl transition-all duration-200"
+          style={{ color: 'var(--text-secondary)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
         >
-          <svg
-            className="w-6 h-6"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 6h16M4 12h16M4 18h16"
-            />
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
 
         <input
           type="text"
           placeholder="Search..."
-          className="flex-1 max-w-xs px-4 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+          className="input flex-1 max-w-xs"
         />
       </div>
 
@@ -58,12 +59,12 @@ export default function Header() {
         <div className="flex items-center gap-2 text-sm">
           {isSyncing && (
             <>
-              <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-              <span className="text-gray-600">Syncing...</span>
+              <div className="animate-spin w-4 h-4 rounded-full" style={{ border: '2px solid rgba(56,189,248,0.3)', borderTopColor: '#38bdf8' }}></div>
+              <span style={{ color: 'var(--text-secondary)' }}>Syncing...</span>
             </>
           )}
           {lastSyncTime && !isSyncing && (
-            <span className="text-gray-500">
+            <span style={{ color: 'var(--text-muted)' }}>
               Last sync: {lastSyncTime.toLocaleTimeString()}
             </span>
           )}
@@ -73,41 +74,48 @@ export default function Header() {
         <div className="relative">
           <button
             onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-md transition-colors"
+            className="flex items-center gap-3 p-2 rounded-xl transition-all duration-200"
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
           >
-            <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm">
+            <div className="w-8 h-8 rounded-full text-white flex items-center justify-center font-bold text-sm"
+              style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', boxShadow: '0 0 10px rgba(59, 130, 246, 0.3)' }}>
               {user?.firstName.charAt(0)}
             </div>
-            <span className="text-sm font-medium text-gray-700">{user?.firstName}</span>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{user?.firstName}</span>
             <svg
-              className={`w-4 h-4 text-gray-600 transition-transform ${
-                showUserMenu ? 'rotate-180' : ''
-              }`}
+              className={`w-4 h-4 transition-transform ${showUserMenu ? 'rotate-180' : ''}`}
               fill="currentColor"
               viewBox="0 0 20 20"
+              style={{ color: 'var(--text-muted)' }}
             >
-              <path
-                fillRule="evenodd"
-                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
           </button>
 
           {showUserMenu && (
-            <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg z-10">
+            <div className="absolute right-0 mt-2 w-48 rounded-xl z-10 overflow-hidden"
+              style={{
+                background: 'rgba(15, 29, 50, 0.95)',
+                backdropFilter: 'blur(24px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+              }}>
               <button
                 onClick={() => navigate('/settings')}
-                className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                className="w-full px-4 py-3 text-left text-sm transition-colors"
+                style={{ color: 'var(--text-secondary)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
                 Settings
               </button>
               <button
-                onClick={() => {
-                  handleLogout();
-                  setShowUserMenu(false);
-                }}
-                className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-50 transition-colors border-t border-gray-200"
+                onClick={() => { handleLogout(); setShowUserMenu(false); }}
+                className="w-full px-4 py-3 text-left text-sm transition-colors"
+                style={{ color: '#f87171', borderTop: '1px solid rgba(255,255,255,0.06)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
                 Logout
               </button>
