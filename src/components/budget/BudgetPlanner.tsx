@@ -75,6 +75,8 @@ export function BudgetPlanner() {
     [BudgetStatus.SUBMITTED]: 'bg-blue-100 text-blue-800',
     [BudgetStatus.APPROVED]: 'bg-green-100 text-green-800',
     [BudgetStatus.ACTIVE]: 'bg-yellow-100 text-yellow-800',
+    [BudgetStatus.RETURNED]: 'bg-orange-100 text-orange-800',
+    [BudgetStatus.REVISED]: 'bg-purple-100 text-purple-800',
     [BudgetStatus.CLOSED]: 'bg-red-100 text-red-800',
   };
 

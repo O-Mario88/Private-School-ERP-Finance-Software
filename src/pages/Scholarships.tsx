@@ -3,25 +3,38 @@
  * Active sponsors, sponsored students, coverage analysis
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { ScholarshipService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
-const sponsors = [
-  { id: 'SP-001', name: 'Government Bursary (MoES)', type: 'Government', students: 12, coverage: 45, totalPaid: 72900000, pending: 14580000, status: 'Active' },
-  { id: 'SP-002', name: 'District Bursary', type: 'Government', students: 8, coverage: 60, totalPaid: 51840000, pending: 12960000, status: 'Active' },
-  { id: 'SP-003', name: 'Makerere Foundation', type: 'Corporate', students: 5, coverage: 100, totalPaid: 63450000, pending: 0, status: 'Active' },
-  { id: 'SP-004', name: 'Rotary Foundation', type: 'NGO', students: 3, coverage: 50, totalPaid: 18225000, pending: 6075000, status: 'Active' },
-  { id: 'SP-005', name: 'Parent Bursary Fund', type: 'Internal', students: 10, coverage: 25, totalPaid: 30375000, pending: 10125000, status: 'Active' },
-  { id: 'SP-006', name: 'Subcounty Bursary', type: 'Government', students: 6, coverage: 40, totalPaid: 25920000, pending: 12960000, status: 'Renewal' },
-];
+function useScholarshipData(ver: number) {
+  const { isReady } = useDB();
+  const rawSponsors = useMemo(() => isReady ? ScholarshipService.listSponsors() : [], [isReady, ver]);
+  const sponsors = useMemo(() => rawSponsors.map((sp: any) => ({
+    id: sp.id,
+    name: sp.name || '',
+    type: sp.type || 'Other',
+    students: Number(sp.scholarship_count) || 0,
+    coverage: Number(sp.coverage_percentage) || 50,
+    totalPaid: Number(sp.total_disbursed) || 0,
+    pending: (Number(sp.total_committed) || 0) - (Number(sp.total_disbursed) || 0),
+    status: sp.status === 'active' ? 'Active' : sp.status || 'Active',
+  })), [rawSponsors]);
 
-const sponsoredStudents = [
-  { student: 'Namutebi Grace', class: 'S1 Red', sponsor: 'Gov Bursary', coverage: 45, termFee: 2160000, sponsored: 972000, balance: 1188000 },
-  { student: 'Nabirye Fatuma', class: 'S2 Blue', sponsor: 'District Bursary', coverage: 60, termFee: 2349000, sponsored: 1409400, balance: 939600 },
-  { student: 'Kizza Ronald', class: 'S4 Blue', sponsor: 'Makerere Foundation', coverage: 100, termFee: 1404000, sponsored: 1404000, balance: 0 },
-  { student: 'Acen Patricia', class: 'S2 Red', sponsor: 'Makerere Foundation', coverage: 100, termFee: 2349000, sponsored: 2349000, balance: 0 },
-  { student: 'Ainembabazi Esther', class: 'S3 Blue', sponsor: 'Rotary', coverage: 50, termFee: 1404000, sponsored: 702000, balance: 702000 },
-  { student: 'Waiswa Moses', class: 'S1 Blue', sponsor: 'Parent Fund', coverage: 25, termFee: 1215000, sponsored: 303750, balance: 911250 },
-];
+  const rawApps = useMemo(() => isReady ? ScholarshipService.listApplications() : [], [isReady]);
+  const sponsoredStudents = useMemo(() => rawApps.filter((a: any) => a.status === 'approved').map((a: any) => ({
+    student: a.student_name || '',
+    class: '',
+    sponsor: a.scholarship_name || '',
+    coverage: Number(a.coverage_percentage) || 50,
+    termFee: Number(a.requested_amount) * 2 || 0,
+    sponsored: Number(a.approved_amount) || 0,
+    balance: (Number(a.requested_amount) * 2 || 0) - (Number(a.approved_amount) || 0),
+  })), [rawApps]);
+
+  return { sponsors, sponsoredStudents };
+}
 
 const coverageDist = [
   { label: '100% Coverage', value: 15, color: '#10b981' },
@@ -39,6 +52,19 @@ const quarterlyDisbursement = [
 export default function ScholarshipsPage() {
   const [tab, setTab] = useState<'sponsors' | 'students'>('sponsors');
   const [search, setSearch] = useState('');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', type: 'Government', contact_person: '', phone: '', email: '' });
+
+  const { sponsors, sponsoredStudents } = useScholarshipData(ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.name) return;
+    ScholarshipService.createSponsor({ name: form.name, type: form.type, contact_person: form.contact_person, phone: form.phone, email: form.email });
+    setShowForm(false);
+    setForm({ name: '', type: 'Government', contact_person: '', phone: '', email: '' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const totalStudents = sponsors.reduce((s, sp) => s + sp.students, 0);
   const totalPaid = sponsors.reduce((s, sp) => s + sp.totalPaid, 0);
@@ -58,7 +84,7 @@ export default function ScholarshipsPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <SmBtn label="Send Reminders" />
-          <SmBtn label="+ Add Sponsor" primary />
+          <SmBtn label="+ Add Sponsor" primary onClick={() => setShowForm(true)} />
         </div>
       </div>
 
@@ -144,6 +170,20 @@ export default function ScholarshipsPage() {
           )}
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="Add Sponsor" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Add Sponsor">
+          <div style={fieldFull}><label style={fieldLabel}>Sponsor Name *</label><input style={fieldInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Uganda Government Bursary" /></div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Type</label><select style={fieldInput} value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option>Government</option><option>Corporate</option><option>Individual</option><option>NGO</option></select></div>
+            <div><label style={fieldLabel}>Contact Person</label><input style={fieldInput} value={form.contact_person} onChange={e => setForm({ ...form, contact_person: e.target.value })} /></div>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Phone</label><input style={fieldInput} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Email</label><input style={fieldInput} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+          </div>
+        </FormModal>
+      )}
     </div>
   );
 }
@@ -151,7 +191,7 @@ export default function ScholarshipsPage() {
 function KPI({ icon, title, value, sub, positive }: { icon: string; title: string; value: string; sub: string; positive: boolean }) {
   return (<div className="card" style={{ padding: '20px 22px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}><span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500 }}>{title}</span><div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)', fontSize: 16 }}>{icon}</div></div><div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div><div style={{ marginTop: 8, fontSize: 12, color: positive ? '#34d399' : '#fbbf24' }}>{sub}</div></div>);
 }
-function SmBtn({ label, primary }: { label: string; primary?: boolean }) { return <button style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
+function SmBtn({ label, primary, onClick }: { label: string; primary?: boolean; onClick?: () => void }) { return <button onClick={onClick} style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
 function Badge({ label }: { label: string }) { const c = label === 'Active' ? { bg: 'rgba(16,185,129,0.12)', b: 'rgba(16,185,129,0.3)', t: '#6ee7b7' } : { bg: 'rgba(245,158,11,0.12)', b: 'rgba(245,158,11,0.3)', t: '#fcd34d' }; return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, background: c.bg, border: `1px solid ${c.b}`, color: c.t }}>{label}</span>; }
 
 function BarChart({ data }: { data: { q: string; amt: number }[] }) {

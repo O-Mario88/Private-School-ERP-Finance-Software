@@ -3,20 +3,24 @@
  * Audit trail, exceptions, compliance checklist
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDB } from '../database';
+import { AuditService } from '../database/DatabaseService';
 
-const auditEvents = [
-  { id: 'AE-001', timestamp: '2025-03-08 14:32', user: 'admin@maple.ac.ug', action: 'Invoice Created', entity: 'INV-20250108', module: 'Invoicing', ip: '192.168.1.15', risk: 'Low' },
-  { id: 'AE-002', timestamp: '2025-03-08 14:15', user: 'finance@maple.ac.ug', action: 'Payment Voided', entity: 'PAY-20250304', module: 'Payments', ip: '192.168.1.22', risk: 'High' },
-  { id: 'AE-003', timestamp: '2025-03-08 13:45', user: 'admin@maple.ac.ug', action: 'Fee Template Updated', entity: 'FT-002', module: 'Billing', ip: '192.168.1.15', risk: 'Medium' },
-  { id: 'AE-004', timestamp: '2025-03-08 12:30', user: 'bursar@maple.ac.ug', action: 'Receipt Voided', entity: 'RCP-20250004', module: 'Receipts', ip: '192.168.1.30', risk: 'High' },
-  { id: 'AE-005', timestamp: '2025-03-08 11:00', user: 'admin@maple.ac.ug', action: 'Student Enrolled', entity: 'STU-011', module: 'Students', ip: '192.168.1.15', risk: 'Low' },
-  { id: 'AE-006', timestamp: '2025-03-08 10:20', user: 'finance@maple.ac.ug', action: 'Journal Entry Posted', entity: 'JE-20250045', module: 'Accounting', ip: '192.168.1.22', risk: 'Medium' },
-  { id: 'AE-007', timestamp: '2025-03-07 16:45', user: 'admin@maple.ac.ug', action: 'User Role Changed', entity: 'USR-003', module: 'Settings', ip: '192.168.1.15', risk: 'High' },
-  { id: 'AE-008', timestamp: '2025-03-07 15:30', user: 'bursar@maple.ac.ug', action: 'Budget Override', entity: 'BUD-003', module: 'Budget', ip: '192.168.1.30', risk: 'High' },
-  { id: 'AE-009', timestamp: '2025-03-07 14:00', user: 'admin@maple.ac.ug', action: 'Payment Allocated', entity: 'PAY-20250306', module: 'Payments', ip: '192.168.1.15', risk: 'Low' },
-  { id: 'AE-010', timestamp: '2025-03-07 10:15', user: 'finance@maple.ac.ug', action: 'Bank Recon Completed', entity: 'BA-002', module: 'Bank Recon', ip: '192.168.1.22', risk: 'Low' },
-];
+function useAuditData() {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? AuditService.list() : [], [isReady]);
+  return useMemo(() => raw.map((e: any) => ({
+    id: e.id,
+    timestamp: (e.created_at || '').slice(0, 16).replace('T', ' '),
+    user: e.user_id || 'system',
+    action: e.action || '',
+    entity: e.entity_id || '',
+    module: e.entity_type || '',
+    ip: e.ip_address || '127.0.0.1',
+    risk: e.risk_level === 'high' ? 'High' : e.risk_level === 'medium' ? 'Medium' : 'Low',
+  })), [raw]);
+}
 
 const compliance = [
   { item: 'Chart of Accounts configured', category: 'Accounting', status: 'Complete', dueDate: '2025-01-15' },
@@ -44,6 +48,8 @@ export default function AuditPage() {
   const [tab, setTab] = useState<'events' | 'compliance'>('events');
   const [search, setSearch] = useState('');
   const [riskFilter, setRiskFilter] = useState<'all' | 'Low' | 'Medium' | 'High'>('all');
+
+  const auditEvents = useAuditData();
 
   const highRisk = auditEvents.filter(e => e.risk === 'High').length;
   const todayEvents = auditEvents.filter(e => e.timestamp.startsWith('2025-03-08')).length;

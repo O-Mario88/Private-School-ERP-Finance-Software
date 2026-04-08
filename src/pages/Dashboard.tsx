@@ -3,35 +3,10 @@
  * Main dashboard — Tempo-style layout with KPIs, charts, and data table
  */
 
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAuthStore } from '../store';
-
-// ── Mock data ──────────────────────────────────────────────────────
-const revenuePoints = [
-  { month: 'May', value: 86400000 },
-  { month: 'Jun', value: 110700000 },
-  { month: 'Jul', value: 102600000 },
-  { month: 'Aug', value: 148500000 },
-  { month: 'Sep', value: 132300000 },
-  { month: 'Oct', value: 167400000 },
-  { month: 'Nov', value: 182128500 },
-];
-
-const feeSources = [
-  { label: 'Tuition', value: 130140, color: '#3b82f6', pct: 58 },
-  { label: 'Transport', value: 36180, color: '#f59e0b', pct: 16 },
-  { label: 'Inventory', value: 30240, color: '#10b981', pct: 13 },
-  { label: 'Activities', value: 28890, color: '#a855f7', pct: 13 },
-];
-
-const students = [
-  { name: 'Nakato Sarah', cls: 'S3 Blue', email: 'sarah.nakato@maple.ac.ug', avatar: '', balance: 1350000, status: 'Partial' as const },
-  { name: 'Ssemakula Brian', cls: 'S1 Red', email: 'brian.ssemakula@maple.ac.ug', avatar: '', balance: 0, status: 'Paid' as const },
-  { name: 'Tumusiime Joshua', cls: 'S4 Green', email: 'joshua.tumusiime@maple.ac.ug', avatar: '', balance: 2700000, status: 'Overdue' as const },
-  { name: 'Namutebi Grace', cls: 'S2 Blue', email: 'grace.namutebi@maple.ac.ug', avatar: '', balance: 810000, status: 'Partial' as const },
-  { name: 'Kizza Ronald', cls: 'S6 Red', email: 'ronald.kizza@maple.ac.ug', avatar: '', balance: 0, status: 'Paid' as const },
-  { name: 'Nabirye Fatuma', cls: 'S5 Green', email: 'fatuma.nabirye@maple.ac.ug', avatar: '', balance: 1620000, status: 'Overdue' as const },
-];
+import { useDB } from '../database';
+import { DashboardService } from '../database/DatabaseService';
 
 // ── Helpers ────────────────────────────────────────────────────────
 function fmt(n: number) {
@@ -40,17 +15,48 @@ function fmt(n: number) {
   return `UGX ${n}`;
 }
 
+const FEE_SOURCE_COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#a855f7', '#ef4444', '#06b6d4'];
+
 // ── Main component ────────────────────────────────────────────────
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+  const { isReady } = useDB();
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
+  const [chartHover, setChartHover] = useState<{ index: number; clientX: number; clientY: number } | null>(null);
 
-  const filteredStudents = students.filter(
-    (s) =>
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.cls.toLowerCase().includes(search.toLowerCase())
+  const handleChartHover = useCallback((info: { index: number; clientX: number; clientY: number } | null) => {
+    setChartHover(info);
+  }, []);
+
+  const [donutHover, setDonutHover] = useState<{ index: number; clientX: number; clientY: number } | null>(null);
+
+  const handleDonutHover = useCallback((info: { index: number; clientX: number; clientY: number } | null) => {
+    setDonutHover(info);
+  }, []);
+
+  // ── Load real data from SQLite ────────────────────────────
+  const kpis = useMemo(() => isReady ? DashboardService.getKPIs() : null, [isReady]);
+  const revenuePoints = useMemo(() => isReady ? DashboardService.getRevenueFlow() : [], [isReady]);
+  const rawFeeSources = useMemo(() => isReady ? DashboardService.getFeeSources() : [], [isReady]);
+
+  const feeSources = useMemo(() =>
+    rawFeeSources.map((s, i) => ({ ...s, color: FEE_SOURCE_COLORS[i % FEE_SOURCE_COLORS.length] })),
+    [rawFeeSources]
   );
+
+  const students = useMemo(() =>
+    isReady ? DashboardService.getRecentStudents(search, 20) : [],
+    [isReady, search]
+  );
+
+  const totalRevenue = useMemo(() => revenuePoints.reduce((s, p) => s + p.value, 0), [revenuePoints]);
+
+  const collectionChange = kpis
+    ? kpis.dailyCollectionsPrev > 0
+      ? Math.round(((kpis.dailyCollections - kpis.dailyCollectionsPrev) / kpis.dailyCollectionsPrev) * 100)
+      : 0
+    : 0;
 
   return (
     <div style={{ padding: '0 32px 32px' }}>
@@ -142,34 +148,34 @@ export default function DashboardPage() {
         <KPICard
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="1.8"><rect x="2" y="5" width="20" height="14" rx="2" /><path d="M2 10h20" /></svg>}
           title="Daily Collections"
-          value="UGX 16,526,700"
-          change="+20%(UGX 2.8M)"
-          positive
+          value={fmt(kpis?.dailyCollections ?? 0)}
+          change={`${collectionChange >= 0 ? '+' : ''}${collectionChange}%`}
+          positive={collectionChange >= 0}
           sub="Last 30 Days"
         />
         <KPICard
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="1.8"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>}
           title="Active Students"
-          value="2,243"
-          change="+12%(156)"
+          value={(kpis?.activeStudents ?? 0).toLocaleString()}
+          change={`${kpis?.newEnrollments ?? 0} new`}
           positive
-          sub="Last 30 Days"
+          sub="Enrolled"
         />
         <KPICard
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="1.8"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>}
           title="New Enrollments"
-          value="165"
-          change="+20%(21)"
+          value={String(kpis?.newEnrollments ?? 0)}
+          change=""
           positive
           sub="Last 30 Days"
         />
         <KPICard
           icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="1.8"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>}
           title="Collection Rate"
-          value="84.2%"
-          change="-8%(0.4%)"
-          positive={false}
-          sub="Last 30 Days"
+          value={`${kpis?.collectionRate ?? 0}%`}
+          change=""
+          positive={kpis ? kpis.collectionRate >= 80 : true}
+          sub="Overall"
         />
       </div>
 
@@ -182,47 +188,91 @@ export default function DashboardPage() {
             <button style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18 }}>···</button>
           </div>
           <div style={{ padding: '8px 24px 0' }}>
-            <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)' }}>UGX 182,128,500</span>
+            <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--text-primary)' }}>{fmt(totalRevenue)}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 4 }}>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Total Revenue</span>
-              <span style={{ fontSize: 12, color: '#34d399' }}>+20%(UGX 29.7M)</span>
+              <span style={{ fontSize: 12, color: '#34d399' }}>{revenuePoints.length} months</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>• Last 30 Days</span>
             </div>
           </div>
           {/* Chart area */}
           <div style={{ padding: '16px 24px 20px', position: 'relative' }}>
-            <MiniLineChart data={revenuePoints} />
-            {/* Floating tooltip card */}
-            <div
-              style={{
-                position: 'absolute',
-                left: 40,
-                top: 30,
-                background: 'rgba(15, 29, 50, 0.95)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid var(--glass-border-hover)',
-                borderRadius: 12,
-                padding: '14px 18px',
-                maxWidth: 220,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                zIndex: 2,
-              }}
-            >
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>8 Nov, 2025</div>
-              <div style={{ display: 'flex', gap: 12, fontSize: 12, marginBottom: 8 }}>
-                <span style={{ color: '#60a5fa' }}>UGX 129.6M</span>
-                <span style={{ color: '#34d399' }}>+UGX 16.2M</span>
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', marginBottom: 4 }}>New Record Achieved!</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                November is the highest collection month since Term 1 opening with UGX 182.1M.
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 10 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-muted)', opacity: 0.4 }} />
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-primary)' }} />
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-muted)', opacity: 0.4 }} />
-              </div>
-            </div>
+            <MiniLineChart data={revenuePoints} onHover={handleChartHover} />
+            {/* Dynamic floating tooltip — follows cursor, positioned above */}
+            {chartHover !== null && (() => {
+              const pt = revenuePoints[chartHover.index];
+              const prevValue = chartHover.index > 0 ? revenuePoints[chartHover.index - 1].value : null;
+              const change = prevValue !== null ? pt.value - prevValue : null;
+              const changePositive = change !== null && change >= 0;
+              const fmtAmount = (v: number) => {
+                if (v >= 1_000_000_000) return `UGX ${(v / 1_000_000_000).toFixed(1)}B`;
+                if (v >= 1_000_000) return `UGX ${(v / 1_000_000).toFixed(1)}M`;
+                if (v >= 1_000) return `UGX ${(v / 1_000).toFixed(1)}K`;
+                return `UGX ${v.toLocaleString()}`;
+              };
+              const fmtChange = (v: number) => {
+                const abs = Math.abs(v);
+                if (abs >= 1_000_000) return `${v >= 0 ? '+' : '-'}UGX ${(abs / 1_000_000).toFixed(1)}M`;
+                if (abs >= 1_000) return `${v >= 0 ? '+' : '-'}UGX ${(abs / 1_000).toFixed(1)}K`;
+                return `${v >= 0 ? '+' : '-'}UGX ${abs.toLocaleString()}`;
+              };
+              const maxValue = Math.max(...revenuePoints.map(d => d.value));
+              const isRecord = pt.value === maxValue;
+              const dateLabel = `${pt.month} 2025`;
+
+              return (
+                <div
+                  style={{
+                    position: 'fixed',
+                    left: chartHover.clientX,
+                    top: chartHover.clientY - 14,
+                    transform: 'translateX(-50%) translateY(-100%)',
+                    background: 'rgba(15, 29, 50, 0.95)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid var(--glass-border-hover)',
+                    borderRadius: 12,
+                    padding: '14px 18px',
+                    maxWidth: 220,
+                    minWidth: 190,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                    zIndex: 9999,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{dateLabel}</div>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 12, marginBottom: 8 }}>
+                    <span style={{ color: '#60a5fa', fontWeight: 600 }}>{fmtAmount(pt.value)}</span>
+                    {change !== null && (
+                      <span style={{ color: changePositive ? '#34d399' : '#f87171' }}>{fmtChange(change)}</span>
+                    )}
+                  </div>
+                  {isRecord && (
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#fbbf24', marginBottom: 4 }}>New Record Achieved!</div>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                    {isRecord
+                      ? `${pt.month} is the highest collection month with ${fmtAmount(pt.value)}.`
+                      : change !== null
+                        ? `${changePositive ? 'Increased' : 'Decreased'} by ${fmtChange(Math.abs(change)).replace(/^[+-]/, '')} from ${revenuePoints[chartHover.index - 1].month}.`
+                        : `First recorded month of collections.`}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 10 }}>
+                    {revenuePoints.map((_, i) => (
+                      <span
+                        key={i}
+                        style={{
+                          width: 5,
+                          height: 5,
+                          borderRadius: '50%',
+                          background: i === chartHover.index ? 'var(--text-primary)' : 'var(--text-muted)',
+                          opacity: i === chartHover.index ? 1 : 0.35,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 
@@ -236,12 +286,44 @@ export default function DashboardPage() {
           <div style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', gap: 32 }}>
             {/* Donut */}
             <div style={{ position: 'relative', width: 160, height: 160, flexShrink: 0 }}>
-              <DonutChart data={feeSources} />
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>8,350</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Total Students</span>
+              <DonutChart data={feeSources} onHover={handleDonutHover} />
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' }}>{donutHover !== null ? feeSources[donutHover.index].value.toLocaleString() : feeSources.reduce((s, f) => s + f.value, 0).toLocaleString()}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{donutHover !== null ? feeSources[donutHover.index].label : 'Total Students'}</span>
               </div>
             </div>
+            {/* Donut hover tooltip — fixed above cursor */}
+            {donutHover !== null && (() => {
+              const seg = feeSources[donutHover.index];
+              return (
+                <div
+                  style={{
+                    position: 'fixed',
+                    left: donutHover.clientX,
+                    top: donutHover.clientY - 14,
+                    transform: 'translateX(-50%) translateY(-100%)',
+                    background: 'rgba(15, 29, 50, 0.95)',
+                    backdropFilter: 'blur(16px)',
+                    border: '1px solid var(--glass-border-hover)',
+                    borderRadius: 12,
+                    padding: '12px 16px',
+                    minWidth: 150,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+                    zIndex: 9999,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: seg.color }} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{seg.label}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 12 }}>
+                    <span style={{ color: '#60a5fa', fontWeight: 600 }}>{seg.value.toLocaleString()} students</span>
+                    <span style={{ color: '#34d399' }}>{seg.pct}%</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Legend */}
             <div style={{ flex: 1 }}>
@@ -281,7 +363,7 @@ export default function DashboardPage() {
         {/* Table header bar */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid var(--glass-border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>2,243 Active Students</h3>
+            <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{(kpis?.activeStudents ?? 0).toLocaleString()} Active Students</h3>
             {/* Search */}
             <div style={{ position: 'relative' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
@@ -339,8 +421,8 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {filteredStudents.map((s) => (
-                <tr key={s.email}>
+              {students.map((s) => (
+                <tr key={s.id}>
                   <td><input type="checkbox" style={{ accentColor: 'var(--primary)' }} /></td>
                   <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.name}</td>
                   <td><ClassBadge cls={s.cls} /></td>
@@ -449,7 +531,7 @@ function ClassBadge({ cls }: { cls: string }) {
 
 // ── SVG Mini-Charts ─────────────────────────────────────────────────
 
-function MiniLineChart({ data }: { data: { month: string; value: number }[] }) {
+function MiniLineChart({ data, onHover }: { data: { month: string; value: number }[]; onHover?: (info: { index: number; clientX: number; clientY: number } | null) => void }) {
   const W = 520;
   const H = 160;
   const pad = { l: 40, r: 12, t: 8, b: 28 };
@@ -473,8 +555,45 @@ function MiniLineChart({ data }: { data: { month: string; value: number }[] }) {
     return { v, y };
   });
 
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * W;
+    // Find the closest point by x-distance
+    let closest = 0;
+    let closestDist = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const dist = Math.abs(pts[i].x - mouseX);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = i;
+      }
+    }
+    setActiveIdx(closest);
+    if (onHover) {
+      const pt = pts[closest];
+      // Convert SVG x to pixel position relative to the chart container
+      const clientX = rect.left + (pt.x / W) * rect.width;
+      const clientY = rect.top + (pt.y / H) * rect.height;
+      onHover({ index: closest, clientX, clientY });
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setActiveIdx(null);
+    if (onHover) onHover(null);
+  };
+
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+    <svg
+      width="100%"
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ display: 'block', cursor: 'crosshair' }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
       <defs>
         <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
@@ -493,13 +612,30 @@ function MiniLineChart({ data }: { data: { month: string; value: number }[] }) {
       {/* Area + Line */}
       <path d={area} fill="url(#areaGrad)" />
       <path d={line} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {/* Vertical crosshair on hover */}
+      {activeIdx !== null && (
+        <line
+          x1={pts[activeIdx].x} x2={pts[activeIdx].x}
+          y1={pad.t} y2={H - pad.b}
+          stroke="rgba(96,165,250,0.4)" strokeWidth="1" strokeDasharray="3,3"
+        />
+      )}
       {/* Dots */}
       {pts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r="3.5" fill="#3b82f6" stroke="var(--bg-deep)" strokeWidth="2" />
+        <circle
+          key={i}
+          cx={p.x}
+          cy={p.y}
+          r={activeIdx === i ? 6 : 3.5}
+          fill={activeIdx === i ? '#60a5fa' : '#3b82f6'}
+          stroke="var(--bg-deep)"
+          strokeWidth={activeIdx === i ? 3 : 2}
+          style={{ transition: 'r 0.15s ease, fill 0.15s ease' }}
+        />
       ))}
       {/* X labels */}
       {pts.map((p, i) => (
-        <text key={i} x={p.x} y={H - 8} textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+        <text key={i} x={p.x} y={H - 8} textAnchor="middle" fill={activeIdx === i ? 'var(--text-primary)' : 'var(--text-muted)'} fontSize="10" fontWeight={activeIdx === i ? 600 : 400}>
           {p.month}
         </text>
       ))}
@@ -507,18 +643,61 @@ function MiniLineChart({ data }: { data: { month: string; value: number }[] }) {
   );
 }
 
-function DonutChart({ data }: { data: { label: string; value: number; color: string; pct: number }[] }) {
+function DonutChart({ data, onHover }: { data: { label: string; value: number; color: string; pct: number }[]; onHover?: (info: { index: number; clientX: number; clientY: number } | null) => void }) {
   const size = 160;
   const cx = size / 2;
   const cy = size / 2;
   const r = 60;
   const stroke = 18;
   const circ = 2 * Math.PI * r;
-  let offset = 0;
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
+  // Build cumulative angle boundaries for segment hit-testing
+  const segBounds = React.useMemo(() => {
+    let cum = 0;
+    return data.map((d) => {
+      const start = cum;
+      cum += (d.pct / 100) * 360;
+      return { start, end: cum };
+    });
+  }, [data]);
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    const mx = ((e.clientX - rect.left) / rect.width) * size - cx;
+    const my = ((e.clientY - rect.top) / rect.height) * size - cy;
+    const dist = Math.sqrt(mx * mx + my * my);
+    const innerR = r - stroke / 2;
+    const outerR = r + stroke / 2;
+    if (dist < innerR || dist > outerR) {
+      setActiveIdx(null);
+      if (onHover) onHover(null);
+      return;
+    }
+    // Angle from top, clockwise (matching SVG rotate(-90))
+    let angle = Math.atan2(mx, -my) * (180 / Math.PI);
+    if (angle < 0) angle += 360;
+    for (let i = 0; i < segBounds.length; i++) {
+      if (angle >= segBounds[i].start && angle < segBounds[i].end) {
+        setActiveIdx(i);
+        if (onHover) onHover({ index: i, clientX: e.clientX, clientY: e.clientY });
+        return;
+      }
+    }
+    setActiveIdx(null);
+    if (onHover) onHover(null);
+  };
+
+  const handleMouseLeave = () => {
+    setActiveIdx(null);
+    if (onHover) onHover(null);
+  };
+
+  let offset = 0;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {data.map((d) => {
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ cursor: 'crosshair' }} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
+      {data.map((d, i) => {
         const dashLen = (d.pct / 100) * circ;
         const gap = circ - dashLen;
         const el = (
@@ -529,12 +708,12 @@ function DonutChart({ data }: { data: { label: string; value: number; color: str
             r={r}
             fill="none"
             stroke={d.color}
-            strokeWidth={stroke}
+            strokeWidth={activeIdx === i ? stroke + 4 : stroke}
             strokeDasharray={`${dashLen} ${gap}`}
             strokeDashoffset={-offset}
             strokeLinecap="round"
             transform={`rotate(-90 ${cx} ${cy})`}
-            style={{ transition: 'stroke-dashoffset 0.5s ease' }}
+            style={{ transition: 'stroke-width 0.15s ease', opacity: activeIdx !== null && activeIdx !== i ? 0.5 : 1 }}
           />
         );
         offset += dashLen;

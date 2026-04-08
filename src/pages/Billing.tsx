@@ -3,18 +3,24 @@
  * Fee templates, billing cycles, term billing status
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDB } from '../database';
+import { BillingService } from '../database/DatabaseService';
 
-const feeTemplates = [
-  { id: 'FT-001', name: 'Tuition – S1-S3', amount: 1215000, category: 'Tuition', term: 'Term 1', students: 120, status: 'Active' },
-  { id: 'FT-002', name: 'Tuition – S4-S6', amount: 1404000, category: 'Tuition', term: 'Term 1', students: 95, status: 'Active' },
-  { id: 'FT-003', name: 'Boarding Fee', amount: 945000, category: 'Boarding', term: 'Term 1', students: 80, status: 'Active' },
-  { id: 'FT-004', name: 'Transport – Zone A', amount: 324000, category: 'Transport', term: 'Term 1', students: 45, status: 'Active' },
-  { id: 'FT-005', name: 'Transport – Zone B', amount: 486000, category: 'Transport', term: 'Term 1', students: 35, status: 'Active' },
-  { id: 'FT-006', name: 'Lunch Program', amount: 216000, category: 'Meals', term: 'Term 1', students: 200, status: 'Active' },
-  { id: 'FT-007', name: 'Activity Fee', amount: 135000, category: 'Extra', term: 'Term 1', students: 180, status: 'Active' },
-  { id: 'FT-008', name: 'Lab Fee', amount: 81000, category: 'Academic', term: 'Term 1', students: 95, status: 'Draft' },
-];
+function useBillingData(search: string) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? BillingService.getFeeTemplates() : [], [isReady]);
+  const feeTemplates = useMemo(() => raw.map((t: any) => ({
+    id: t.id,
+    name: t.name || '',
+    amount: Number(t.total_amount) || 0,
+    category: t.class_name || 'General',
+    term: 'Term 1',
+    students: Number(t.line_count) || 0,
+    status: t.status === 'active' ? 'Active' : t.status || 'Active',
+  })), [raw]);
+  return { feeTemplates };
+}
 
 const billingCycles = [
   { id: 'BC-001', term: 'Term 1 2025', start: '2025-02-03', end: '2025-04-11', invoiced: 264600000, collected: 237500000, pending: 27100000, status: 'Active' },
@@ -38,6 +44,8 @@ const collectionTrend = [
 export default function BillingPage() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'templates' | 'cycles'>('templates');
+
+  const { feeTemplates } = useBillingData(search);
 
   const totalRev = feeTemplates.reduce((s, t) => s + t.amount * t.students, 0);
   const activeTemplates = feeTemplates.filter(t => t.status === 'Active').length;

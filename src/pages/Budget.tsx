@@ -3,19 +3,29 @@
  * Budget planning, variance analysis, utilization tracking
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { BudgetService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
 /* ── Mock data ─────────────────────────────────────────────────── */
-const budgetLines = [
-  { id: 'BL-001', account: '5100 — Salaries', dept: 'Administration', budget: 97200000, actual: 92340000, variance: 4860000, pct: 95, status: 'On Track' },
-  { id: 'BL-002', account: '5200 — Supplies', dept: 'Academic', budget: 12960000, actual: 14040000, variance: -1080000, pct: 108, status: 'Over Budget' },
-  { id: 'BL-003', account: '5300 — Transport', dept: 'Operations', budget: 19440000, actual: 18360000, variance: 1080000, pct: 94, status: 'On Track' },
-  { id: 'BL-004', account: '5400 — Utilities', dept: 'Operations', budget: 25920000, actual: 28350000, variance: -2430000, pct: 109, status: 'Over Budget' },
-  { id: 'BL-005', account: '5500 — Maintenance', dept: 'Facilities', budget: 16200000, actual: 11340000, variance: 4860000, pct: 70, status: 'Under Budget' },
-  { id: 'BL-006', account: '5600 — Food & Catering', dept: 'Boarding', budget: 64800000, actual: 61560000, variance: 3240000, pct: 95, status: 'On Track' },
-  { id: 'BL-007', account: '5700 — Security', dept: 'Operations', budget: 9720000, actual: 10260000, variance: -540000, pct: 106, status: 'Over Budget' },
-  { id: 'BL-008', account: '4100 — Tuition Revenue', dept: 'Revenue', budget: 486000000, actual: 437400000, variance: -48600000, pct: 90, status: 'Under Target' },
-];
+/* ── Data from SQLite ── */
+function useBudgetData(ver: number) {
+  const { isReady } = useDB();
+  const budgets = useMemo(() => isReady ? BudgetService.list() : [], [isReady, ver]);
+  const budgetId = budgets.length > 0 ? budgets[0].id : null;
+  const raw = useMemo(() => budgetId && isReady ? BudgetService.getLines(budgetId as string) : [], [isReady, budgetId]);
+  return useMemo(() => raw.map((bl: any) => ({
+    id: bl.id,
+    account: bl.description || bl.category_name || '',
+    dept: bl.category_name || 'General',
+    budget: Number(bl.budgeted_amount) || 0,
+    actual: Number(bl.actual_amount) || 0,
+    variance: Number(bl.variance) || 0,
+    pct: Number(bl.budgeted_amount) > 0 ? Math.round((Number(bl.actual_amount) / Number(bl.budgeted_amount)) * 100) : 0,
+    status: Number(bl.variance) >= 0 ? 'On Track' : Math.abs(Number(bl.variance)) > Number(bl.budgeted_amount) * 0.05 ? 'Over Budget' : 'On Track',
+  })), [raw]);
+}
 
 const varianceTrend = [
   { month: 'Nov', favorable: 8640000, unfavorable: 4860000 },
@@ -37,6 +47,19 @@ const deptUtilization = [
 export default function BudgetPage() {
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', notes: '' });
+
+  const budgetLines = useBudgetData(ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.name) return;
+    BudgetService.create({ name: form.name, notes: form.notes });
+    setShowForm(false);
+    setForm({ name: '', notes: '' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const totalBudget = budgetLines.filter(b => b.dept !== 'Revenue').reduce((s, b) => s + b.budget, 0);
   const totalActual = budgetLines.filter(b => b.dept !== 'Revenue').reduce((s, b) => s + b.actual, 0);
@@ -60,7 +83,7 @@ export default function BudgetPage() {
             <button key={v} onClick={() => setPeriod(v as any)} style={{ padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', background: period === v ? 'rgba(255,255,255,0.12)' : 'transparent', color: period === v ? 'var(--text-primary)' : 'var(--text-muted)' }}>{l}</button>
           ))}
         </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
+        <button onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
           + New Budget
         </button>
       </div>
@@ -149,6 +172,13 @@ export default function BudgetPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="New Budget" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Create Budget">
+          <div style={fieldFull}><label style={fieldLabel}>Budget Name *</label><input style={fieldInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. FY 2026/27 Operating Budget" /></div>
+          <div style={fieldFull}><label style={fieldLabel}>Notes</label><input style={fieldInput} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Optional notes" /></div>
+        </FormModal>
+      )}
     </div>
   );
 }

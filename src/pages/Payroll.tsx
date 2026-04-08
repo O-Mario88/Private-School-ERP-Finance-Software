@@ -3,18 +3,30 @@
  * Employee management, payroll runs, and payslips
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { PayrollService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
-/* ── Mock data ─────────────────────────────────────────────────── */
-const employees = [
-  { id: 'EMP-001', name: 'Ssekandi Robert', dept: 'Administration', position: 'Deputy Principal', grade: 'A', gross: 3240000, net: 2430000, status: 'Paid' },
-  { id: 'EMP-002', name: 'Namatovu Janet', dept: 'Academic', position: 'HOD Science', grade: 'B', gross: 2430000, net: 1822500, status: 'Paid' },
-  { id: 'EMP-003', name: 'Musoke David', dept: 'Academic', position: 'Mathematics', grade: 'C', gross: 2025000, net: 1518750, status: 'Paid' },
-  { id: 'EMP-004', name: 'Nantongo Florence', dept: 'Administration', position: 'Office Assistant', grade: 'D', gross: 1215000, net: 911250, status: 'Paid' },
-  { id: 'EMP-005', name: 'Ochola Peter', dept: 'Academic', position: 'English Teacher', grade: 'C', gross: 2025000, net: 1518750, status: 'Paid' },
-  { id: 'EMP-006', name: 'Babirye Agnes', dept: 'Academic', position: 'Luganda Teacher', grade: 'C', gross: 2025000, net: 1518750, status: 'Pending' },
-  { id: 'EMP-007', name: 'Tumwine Patrick', dept: 'Operations', position: 'Driver', grade: 'D', gross: 1215000, net: 911250, status: 'Pending' },
-];
+/* ── Data from SQLite ──────────────────────────────────────────── */
+function usePayrollData(search: string, ver: number) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? PayrollService.listEmployees({ search: search || undefined }) : [], [isReady, search, ver]);
+  const stats = useMemo(() => isReady ? PayrollService.getStats() : null, [isReady]);
+
+  const employees = useMemo(() => raw.map((e: any) => ({
+    id: e.employee_number || e.id,
+    name: `${e.first_name} ${e.last_name}`,
+    dept: e.department || '',
+    position: e.position || '',
+    grade: 'A',
+    gross: Number(e.gross_salary) || 0,
+    net: Math.round((Number(e.gross_salary) || 0) * 0.75),
+    status: 'Paid' as const,
+  })), [raw]);
+
+  return { employees, stats };
+}
 
 const payrollTrend = [
   { month: 'Nov', gross: 2650000, net: 1980000 },
@@ -35,10 +47,21 @@ const deptBreakdown = [
 export default function PayrollPage() {
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ first_name: '', last_name: '', department: 'Teaching', position: '', basic_salary: '' });
 
-  const filtered = employees.filter(
-    (e) => e.name.toLowerCase().includes(search.toLowerCase()) || e.id.toLowerCase().includes(search.toLowerCase())
-  );
+  const { employees, stats } = usePayrollData(search, ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.first_name || !form.last_name || !form.basic_salary) return;
+    PayrollService.createEmployee({ ...form, basic_salary: Number(form.basic_salary), hire_date: new Date().toISOString().split('T')[0] });
+    setShowForm(false);
+    setForm({ first_name: '', last_name: '', department: 'Teaching', position: '', basic_salary: '' });
+    setVer(v => v + 1);
+  }, [form]);
+
+  const filtered = employees;
 
   return (
     <div style={{ padding: '0 32px 32px' }}>
@@ -53,8 +76,8 @@ export default function PayrollPage() {
             <button key={v} onClick={() => setPeriod(v as any)} style={{ padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', background: period === v ? 'rgba(255,255,255,0.12)' : 'transparent', color: period === v ? 'var(--text-primary)' : 'var(--text-muted)' }}>{l}</button>
           ))}
         </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
-          + Run Payroll
+        <button onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
+          + Add Employee
         </button>
       </div>
 
@@ -150,6 +173,20 @@ export default function PayrollPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="Add Employee" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Add Employee">
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>First Name *</label><input style={fieldInput} value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Last Name *</label><input style={fieldInput} value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} /></div>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Department</label><select style={fieldInput} value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}><option>Teaching</option><option>Administration</option><option>Support</option><option>Finance</option></select></div>
+            <div><label style={fieldLabel}>Position</label><input style={fieldInput} value={form.position} onChange={e => setForm({ ...form, position: e.target.value })} placeholder="e.g. Teacher" /></div>
+          </div>
+          <div style={fieldFull}><label style={fieldLabel}>Basic Salary (UGX) *</label><input type="number" style={fieldInput} value={form.basic_salary} onChange={e => setForm({ ...form, basic_salary: e.target.value })} /></div>
+        </FormModal>
+      )}
     </div>
   );
 }

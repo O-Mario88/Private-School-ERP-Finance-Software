@@ -3,16 +3,23 @@
  * Cash management, bank positions, forecasting, inter-bank transfers
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDB } from '../database';
+import { TreasuryService } from '../database/DatabaseService';
 
-/* ── Mock data ─────────────────────────────────────────────────── */
-const bankAccounts = [
-  { id: 'BA-001', bank: 'Stanbic Bank Uganda', last4: '****4521', type: 'Operating', balance: 93150000, status: 'Active' },
-  { id: 'BA-002', bank: 'Centenary Bank', last4: '****8834', type: 'Collections', balance: 49140000, status: 'Active' },
-  { id: 'BA-003', bank: 'MTN MoMo Merchant', last4: '256700', type: 'Mobile Money', balance: 16740000, status: 'Active' },
-  { id: 'BA-004', bank: 'dfcu Bank', last4: '****2290', type: 'Payroll', balance: 12150000, status: 'Active' },
-  { id: 'BA-005', bank: 'Bank of Africa', last4: '****6612', type: 'Savings', balance: 140400000, status: 'Active' },
-];
+/* ── Data from SQLite ─────────────────────────────────────────────── */
+function useTreasuryData() {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? TreasuryService.getCashPosition() : [], [isReady]);
+  return useMemo(() => raw.map((a: any) => ({
+    id: a.id,
+    bank: a.account_name || a.bank_name || '',
+    last4: a.account_number ? `****${a.account_number.slice(-4)}` : '',
+    type: a.account_type || 'Operating',
+    balance: Number(a.balance) || Number(a.current_balance) || 0,
+    status: 'Active',
+  })), [raw]);
+}
 
 const transfers = [
   { id: 'TF-001', from: 'Centenary Bank', to: 'Stanbic Bank', amount: 27000000, ref: 'RTGS-88234', date: '2025-03-06', status: 'Completed' },
@@ -43,6 +50,8 @@ export default function TreasuryPage() {
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'accounts' | 'transfers'>('accounts');
+
+  const bankAccounts = useTreasuryData();
 
   const totalCash = bankAccounts.reduce((s, a) => s + a.balance, 0);
   const filteredTransfers = transfers.filter((t) => t.from.toLowerCase().includes(search.toLowerCase()) || t.to.toLowerCase().includes(search.toLowerCase()) || t.id.toLowerCase().includes(search.toLowerCase()));

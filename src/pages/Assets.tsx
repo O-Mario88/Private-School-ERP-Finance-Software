@@ -3,18 +3,29 @@
  * Asset register, depreciation, disposal management
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { AssetService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
 /* ── Mock data ─────────────────────────────────────────────────── */
-const assets = [
-  { id: 'FA-001', name: 'School Bus — UAB 234X', category: 'Vehicles', cost: 121500000, accDep: 30375000, nbv: 91125000, method: 'SL', life: 8, acquired: '2023-01-15', status: 'Active' },
-  { id: 'FA-002', name: 'Science Lab Equipment', category: 'Equipment', cost: 59400000, accDep: 19800000, nbv: 39600000, method: 'SL', life: 6, acquired: '2023-06-01', status: 'Active' },
-  { id: 'FA-003', name: 'Computer Lab (30 PCs)', category: 'IT Equipment', cost: 48600000, accDep: 24300000, nbv: 24300000, method: 'SL', life: 4, acquired: '2024-01-10', status: 'Active' },
-  { id: 'FA-004', name: 'Admin Block Furniture', category: 'Furniture', cost: 22950000, accDep: 4590000, nbv: 18360000, method: 'SL', life: 10, acquired: '2024-03-20', status: 'Active' },
-  { id: 'FA-005', name: 'Playground Equipment', category: 'Equipment', cost: 17550000, accDep: 5850000, nbv: 11700000, method: 'SL', life: 6, acquired: '2024-06-15', status: 'Active' },
-  { id: 'FA-006', name: 'Generator 50KVA', category: 'Plant & Machinery', cost: 32400000, accDep: 8100000, nbv: 24300000, method: 'RB', life: 8, acquired: '2024-09-01', status: 'Active' },
-  { id: 'FA-007', name: 'Old Printer (HP)', category: 'IT Equipment', cost: 2295000, accDep: 2295000, nbv: 0, method: 'SL', life: 3, acquired: '2022-01-01', status: 'Disposed' },
-];
+/* ── Data from SQLite ── */
+function useAssetData(search?: string, ver?: number) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? AssetService.list() : [], [isReady, ver]);
+  return useMemo(() => raw.map((a: any) => ({
+    id: a.asset_number || a.id,
+    name: a.description || a.asset_number || '',
+    category: a.category_name || '',
+    cost: Number(a.acquisition_cost) || 0,
+    accDep: Number(a.accumulated_depr) || 0,
+    nbv: Number(a.net_book_value) || 0,
+    method: a.depr_method || 'SL',
+    life: Number(a.useful_life_years) || 5,
+    acquired: (a.acquisition_date || '').slice(0, 10),
+    status: a.status === 'active' ? 'Active' : a.status === 'disposed' ? 'Disposed' : a.status || 'Active',
+  })), [raw]);
+}
 
 const depTrend = [
   { month: 'Nov', amount: 4995000 },
@@ -36,6 +47,19 @@ const categoryBreakdown = [
 export default function AssetsPage() {
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ description: '', category_id: '', acquisition_cost: '', useful_life_months: '60', depr_method: 'straight_line' });
+
+  const assets = useAssetData(search, ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.description || !form.acquisition_cost) return;
+    AssetService.create({ description: form.description, category_id: form.category_id, acquisition_cost: Number(form.acquisition_cost), useful_life_months: Number(form.useful_life_months), acquisition_date: new Date().toISOString().split('T')[0] });
+    setShowForm(false);
+    setForm({ description: '', category_id: '', acquisition_cost: '', useful_life_months: '60', depr_method: 'straight_line' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const filtered = assets.filter(
     (a) => a.name.toLowerCase().includes(search.toLowerCase()) || a.id.toLowerCase().includes(search.toLowerCase())
@@ -58,8 +82,8 @@ export default function AssetsPage() {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Run Depreciation</button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>+ Add Asset</button>
+          <button onClick={() => { AssetService.runDepreciation(new Date().toISOString().slice(0,7)); setVer(v => v + 1); }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Run Depreciation</button>
+          <button onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>+ Add Asset</button>
         </div>
       </div>
 
@@ -148,6 +172,20 @@ export default function AssetsPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="Add Fixed Asset" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Register Asset">
+          <div style={fieldFull}><label style={fieldLabel}>Description *</label><input style={fieldInput} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="e.g. Toyota Hiace School Bus" /></div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Category</label><input style={fieldInput} value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} placeholder="e.g. Vehicles" /></div>
+            <div><label style={fieldLabel}>Acquisition Cost (UGX) *</label><input type="number" style={fieldInput} value={form.acquisition_cost} onChange={e => setForm({ ...form, acquisition_cost: e.target.value })} /></div>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Useful Life (months)</label><input type="number" style={fieldInput} value={form.useful_life_months} onChange={e => setForm({ ...form, useful_life_months: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Depreciation Method</label><select style={fieldInput} value={form.depr_method} onChange={e => setForm({ ...form, depr_method: e.target.value })}><option value="straight_line">Straight-Line</option><option value="reducing_balance">Reducing Balance</option></select></div>
+          </div>
+        </FormModal>
+      )}
     </div>
   );
 }

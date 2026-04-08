@@ -3,16 +3,34 @@
  * Routes, vehicle assignments, profitability, occupancy
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { TransportService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
-const routes = [
-  { id: 'RT-001', name: 'Ntinda – Bukoto', vehicle: 'UAX 123A', driver: 'Ssekandi Robert', students: 28, feePerStudent: 324000, monthlyCost: 5400000, status: 'Active' },
-  { id: 'RT-002', name: 'Naalya – Kyaliwajjala', vehicle: 'UAX 456B', driver: 'Musoke David', students: 32, feePerStudent: 378000, monthlyCost: 6480000, status: 'Active' },
-  { id: 'RT-003', name: 'Mukono Express', vehicle: 'UAX 789C', driver: 'Ochola Peter', students: 22, feePerStudent: 486000, monthlyCost: 8640000, status: 'Active' },
-  { id: 'RT-004', name: 'Entebbe Road', vehicle: 'UAX 012D', driver: 'Tumwine Patrick', students: 25, feePerStudent: 405000, monthlyCost: 7560000, status: 'Active' },
-  { id: 'RT-005', name: 'Nansana – Wakiso', vehicle: 'UAX 345E', driver: 'Andama Joseph', students: 18, feePerStudent: 324000, monthlyCost: 5400000, status: 'Active' },
-  { id: 'RT-006', name: 'Bweyogerere – Kireka', vehicle: '', driver: '', students: 0, feePerStudent: 351000, monthlyCost: 0, status: 'Planned' },
-];
+function useTransportData(search: string, ver: number) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? TransportService.listRoutes() : [], [isReady, ver]);
+  const stats = useMemo(() => isReady ? TransportService.getStats() : null, [isReady]);
+
+  const routes = useMemo(() => raw.map((r: any) => ({
+    id: r.id,
+    name: r.route_name || '',
+    vehicle: r.vehicle_reg || '',
+    driver: r.driver_name || '',
+    students: Number(r.current_students) || 0,
+    feePerStudent: Number(r.cost_per_term) || 0,
+    monthlyCost: Math.round((Number(r.cost_per_term) || 0) * 0.3),
+    status: r.status === 'active' ? 'Active' : r.status,
+  })), [raw]);
+
+  const filtered = useMemo(() =>
+    routes.filter(r => r.name.toLowerCase().includes(search.toLowerCase())),
+    [routes, search]
+  );
+
+  return { routes, filtered, stats };
+}
 
 const occupancyData = [
   { label: 'Full (90%+)', value: 30, color: '#10b981' },
@@ -29,14 +47,25 @@ const monthlyRevenue = [
 
 export default function TransportPage() {
   const [search, setSearch] = useState('');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ route_name: '', vehicle_reg: '', driver_name: '', cost_per_term: '' });
+
+  const { routes, filtered, stats } = useTransportData(search, ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.route_name) return;
+    TransportService.createRoute({ route_name: form.route_name, vehicle_reg: form.vehicle_reg, driver_name: form.driver_name, cost_per_term: Number(form.cost_per_term) || 0 });
+    setShowForm(false);
+    setForm({ route_name: '', vehicle_reg: '', driver_name: '', cost_per_term: '' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const totalStudents = routes.reduce((s, r) => s + r.students, 0);
   const totalRev = routes.reduce((s, r) => s + r.students * r.feePerStudent, 0);
   const totalCost = routes.reduce((s, r) => s + r.monthlyCost, 0);
   const activeRoutes = routes.filter(r => r.status === 'Active').length;
-  const occupancy = Math.round(occupancyData.filter(o => o.label.startsWith('Full') || o.label.startsWith('Good')).reduce((s, o) => s + o.value, 0));
-
-  const filtered = routes.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+  const occupancy = Math.round(occupancyData.reduce((s, d) => s + d.value, 0) / occupancyData.length);
 
   return (
     <div style={{ padding: '0 32px 32px' }}>
@@ -48,7 +77,7 @@ export default function TransportPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <SmBtn label="Assign Students" />
-          <SmBtn label="+ Add Route" primary />
+          <SmBtn label="+ Add Route" primary onClick={() => setShowForm(true)} />
         </div>
       </div>
 
@@ -123,6 +152,17 @@ export default function TransportPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="Add Transport Route" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Create Route">
+          <div style={fieldFull}><label style={fieldLabel}>Route Name *</label><input style={fieldInput} value={form.route_name} onChange={e => setForm({ ...form, route_name: e.target.value })} placeholder="e.g. Kampala — Entebbe" /></div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Vehicle Reg</label><input style={fieldInput} value={form.vehicle_reg} onChange={e => setForm({ ...form, vehicle_reg: e.target.value })} placeholder="UAX 123B" /></div>
+            <div><label style={fieldLabel}>Driver Name</label><input style={fieldInput} value={form.driver_name} onChange={e => setForm({ ...form, driver_name: e.target.value })} /></div>
+          </div>
+          <div style={fieldFull}><label style={fieldLabel}>Cost Per Term (UGX)</label><input type="number" style={fieldInput} value={form.cost_per_term} onChange={e => setForm({ ...form, cost_per_term: e.target.value })} /></div>
+        </FormModal>
+      )}
     </div>
   );
 }
@@ -130,7 +170,7 @@ export default function TransportPage() {
 function KPI({ icon, title, value, sub, positive }: { icon: string; title: string; value: string; sub: string; positive: boolean }) {
   return (<div className="card" style={{ padding: '20px 22px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}><span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500 }}>{title}</span><div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)', fontSize: 16 }}>{icon}</div></div><div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div><div style={{ marginTop: 8, fontSize: 12, color: positive ? '#34d399' : '#fbbf24' }}>{sub}</div></div>);
 }
-function SmBtn({ label, primary }: { label: string; primary?: boolean }) { return <button style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
+function SmBtn({ label, primary, onClick }: { label: string; primary?: boolean; onClick?: () => void }) { return <button onClick={onClick} style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
 function Badge({ label }: { label: string }) { const c = label === 'Active' ? { bg: 'rgba(16,185,129,0.12)', b: 'rgba(16,185,129,0.3)', t: '#6ee7b7' } : { bg: 'rgba(59,130,246,0.12)', b: 'rgba(59,130,246,0.3)', t: '#93c5fd' }; return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, background: c.bg, border: `1px solid ${c.b}`, color: c.t }}>{label}</span>; }
 
 function BarChart({ data }: { data: { month: string; rev: number; cost: number }[] }) {

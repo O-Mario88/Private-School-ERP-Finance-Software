@@ -3,42 +3,50 @@
  * Student population, financial status, balances, class distribution
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { StudentFeeCard } from '../components/school/StudentFeeCard';
 import { DiscountType } from '../types';
 import type { StudentFeeMapping } from '../types';
+import { useDB } from '../database';
+import { StudentService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
-/* ── Mock data ─────────────────────────────────────────────────── */
-const students = [
-  { id: 'STU-001', name: 'Nakato Sarah', class: 'S1 Blue', sponsor: 'Gov Bursary', balance: 810000, status: 'Partial' as const },
-  { id: 'STU-002', name: 'Ssemakula Brian', class: 'S1 Red', sponsor: '', balance: 0, status: 'Paid' as const },
-  { id: 'STU-003', name: 'Tumusiime Joshua', class: 'S2 Blue', sponsor: '', balance: 2700000, status: 'Overdue' as const },
-  { id: 'STU-004', name: 'Namutebi Grace', class: 'S2 Red', sponsor: 'Makerere Foundation', balance: 540000, status: 'Partial' as const },
-  { id: 'STU-005', name: 'Kizza Ronald', class: 'S3 Blue', sponsor: '', balance: 0, status: 'Paid' as const },
-  { id: 'STU-006', name: 'Nabirye Fatuma', class: 'S3 Red', sponsor: 'District Bursary', balance: 1620000, status: 'Overdue' as const },
-  { id: 'STU-007', name: 'Okello James', class: 'S4 Blue', sponsor: '', balance: 1080000, status: 'Partial' as const },
-  { id: 'STU-008', name: 'Ainembabazi Esther', class: 'S4 Red', sponsor: 'Gov Bursary', balance: 0, status: 'Paid' as const },
-  { id: 'STU-009', name: 'Waiswa Moses', class: 'S5 Blue', sponsor: '', balance: 2160000, status: 'Overdue' as const },
-  { id: 'STU-010', name: 'Acen Patricia', class: 'S5 Red', sponsor: 'Subcounty Bursary', balance: 270000, status: 'Partial' as const },
-];
+/* ── Data from SQLite ──────────────────────────────────────────── */
+function useStudentData(search: string, filter: string, ver: number) {
+  const { isReady } = useDB();
 
-const classDist = [
-  { label: 'S1', value: 28, color: '#3b82f6' },
-  { label: 'S2', value: 24, color: '#10b981' },
-  { label: 'S3', value: 22, color: '#f59e0b' },
-  { label: 'S4', value: 20, color: '#a855f7' },
-  { label: 'S5', value: 16, color: '#06b6d4' },
-  { label: 'S6', value: 12, color: '#ec4899' },
-];
+  const raw = useMemo(() => {
+    if (!isReady) return [];
+    return StudentService.list({ search: search || undefined, limit: 100 });
+  }, [isReady, search, ver]);
 
-const balanceTrend = [
-  { month: 'Nov', amount: 8200000 },
-  { month: 'Dec', amount: 7400000 },
-  { month: 'Jan', amount: 9100000 },
-  { month: 'Feb', amount: 7800000 },
-  { month: 'Mar', amount: 6500000 },
-  { month: 'Apr', amount: 5250000 },
-];
+  const students = useMemo(() => raw.map(s => ({
+    id: s.admission_no || s.id,
+    name: `${s.first_name} ${s.last_name}`,
+    class: `${s.class_name || ''} ${s.stream_name || ''}`.trim(),
+    sponsor: '',
+    balance: Number(s.total_balance) || 0,
+    status: (Number(s.total_balance) === 0 ? 'Paid' : Number(s.total_balance) > 1000000 ? 'Overdue' : 'Partial') as 'Paid' | 'Partial' | 'Overdue',
+  })), [raw]);
+
+  const classes = useMemo(() => isReady ? StudentService.getClasses() : [], [isReady]);
+  const classDist = useMemo(() => {
+    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#a855f7', '#06b6d4', '#ec4899'];
+    return classes.map((c: any, i: number) => ({
+      label: c.name,
+      value: Number(c.student_count) || 0,
+      color: colors[i % colors.length],
+    }));
+  }, [classes]);
+
+  const balanceTrend = useMemo(() => [
+    { month: 'Nov', amount: 48 }, { month: 'Dec', amount: 44 },
+    { month: 'Jan', amount: 40 }, { month: 'Feb', amount: 36 },
+    { month: 'Mar', amount: 32 }, { month: 'Apr', amount: 30 },
+  ], []);
+
+  return { students, classDist, balanceTrend };
+}
 
 const STUDENT_FEE_MAPPINGS: Record<string, StudentFeeMapping> = {
   'STU-001': {
@@ -66,6 +74,21 @@ export default function StudentsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'arrears' | 'cleared' | 'sponsored'>('all');
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ first_name: '', last_name: '', gender: 'Male', class_id: '', guardian_first_name: '', guardian_last_name: '', guardian_phone: '' });
+
+  const { students, classDist, balanceTrend } = useStudentData(search, filter, ver);
+
+  const classes = useMemo(() => StudentService.getClasses(), [ver]);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.first_name || !form.last_name || !form.class_id) return;
+    StudentService.create({ ...form, guardian_relationship: 'parent' });
+    setShowForm(false);
+    setForm({ first_name: '', last_name: '', gender: 'Male', class_id: '', guardian_first_name: '', guardian_last_name: '', guardian_phone: '' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const paid = students.filter(s => s.status === 'Paid').length;
   const partial = students.filter(s => s.status === 'Partial').length;
@@ -74,7 +97,7 @@ export default function StudentsPage() {
   const sponsored = students.filter(s => s.sponsor).length;
   const totalBal = students.reduce((s, st) => s + st.balance, 0);
 
-  let filtered = students.filter(s => s.name.toLowerCase().includes(search.toLowerCase()) || s.id.toLowerCase().includes(search.toLowerCase()));
+  let filtered = students;
   if (filter === 'arrears') filtered = filtered.filter(s => s.balance > 0);
   if (filter === 'cleared') filtered = filtered.filter(s => s.status === 'Paid');
   if (filter === 'sponsored') filtered = filtered.filter(s => s.sponsor);
@@ -90,7 +113,7 @@ export default function StudentsPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>Export</button>
-          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>+ Add Student</button>
+          <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }} onClick={() => setShowForm(true)}>+ Add Student</button>
         </div>
       </div>
 
@@ -195,6 +218,25 @@ export default function StudentsPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="Add Student" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Register">
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>First Name *</label><input style={fieldInput} value={form.first_name} onChange={e => setForm({ ...form, first_name: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Last Name *</label><input style={fieldInput} value={form.last_name} onChange={e => setForm({ ...form, last_name: e.target.value })} /></div>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Gender *</label><select style={fieldInput} value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}><option>Male</option><option>Female</option></select></div>
+            <div><label style={fieldLabel}>Class *</label><select style={fieldInput} value={form.class_id} onChange={e => setForm({ ...form, class_id: e.target.value })}><option value="">Select…</option>{classes.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', margin: '16px 0 10px' }}>Guardian (optional)</div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>First Name</label><input style={fieldInput} value={form.guardian_first_name} onChange={e => setForm({ ...form, guardian_first_name: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Last Name</label><input style={fieldInput} value={form.guardian_last_name} onChange={e => setForm({ ...form, guardian_last_name: e.target.value })} /></div>
+          </div>
+          <div style={fieldFull}><label style={fieldLabel}>Phone</label><input style={fieldInput} value={form.guardian_phone} onChange={e => setForm({ ...form, guardian_phone: e.target.value })} /></div>
+        </FormModal>
+      )}
     </div>
   );
 }

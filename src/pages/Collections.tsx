@@ -3,8 +3,10 @@
  * Payment tracking, aging analysis, collections follow-ups
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Routes, Route, Link } from 'react-router-dom';
+import { useDB } from '../database';
+import { PaymentService, CollectionsService } from '../database/DatabaseService';
 
 export default function CollectionsPage() {
   return (
@@ -18,23 +20,32 @@ export default function CollectionsPage() {
 }
 
 /* ── Mock data ─────────────────────────────────────────────────── */
-const payments = [
-  { id: 'COL-001', student: 'Nakato Sarah', class: 'S1 Blue', amount: 810000, method: 'MTN MoMo', date: '2025-03-08', status: 'Cleared', balance: 0 },
-  { id: 'COL-002', student: 'Ssemakula Brian', class: 'S2 Red', amount: 1215000, method: 'Bank Transfer', date: '2025-03-07', status: 'Cleared', balance: 0 },
-  { id: 'COL-003', student: 'Tumusiime Joshua', class: 'S3 Blue', amount: 540000, method: 'Airtel Money', date: '2025-03-07', status: 'Cleared', balance: 0 },
-  { id: 'COL-004', student: 'Namutebi Grace', class: 'S1 Red', amount: 1350000, method: 'MTN MoMo', date: '2025-03-06', status: 'Pending', balance: 540000 },
-  { id: 'COL-005', student: 'Kizza Ronald', class: 'S4 Blue', amount: 675000, method: 'Cash', date: '2025-03-06', status: 'Cleared', balance: 0 },
-  { id: 'COL-006', student: 'Nabirye Fatuma', class: 'S2 Blue', amount: 2160000, method: 'Cheque', date: '2025-03-05', status: 'Pending', balance: 810000 },
-  { id: 'COL-007', student: 'Okello James', class: 'S5 Red', amount: 810000, method: 'MTN MoMo', date: '2025-03-05', status: 'Cleared', balance: 0 },
-  { id: 'COL-008', student: 'Ainembabazi Esther', class: 'S3 Red', amount: 1620000, method: 'Bank Transfer', date: '2025-03-04', status: 'Cleared', balance: 0 },
-];
+/* ── Data from SQLite ── */
+function useCollectionsData(search: string) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? PaymentService.list({ search: search || undefined, limit: 50 }) : [], [isReady, search]);
+  const payments = useMemo(() => raw.map((p: any) => ({
+    id: p.payment_number || p.id,
+    student: p.student_name || '',
+    class: p.class_name || '',
+    amount: Number(p.amount) || 0,
+    method: p.payment_method || '',
+    date: (p.payment_date || '').slice(0, 10),
+    status: p.status === 'recorded' ? 'Cleared' : p.status === 'pending' ? 'Pending' : 'Cleared',
+    balance: 0,
+  })), [raw]);
 
-const agingBuckets = [
-  { label: '0-30 days', value: 42, color: '#3b82f6', amount: 'UGX 86.4M' },
-  { label: '31-60 days', value: 28, color: '#f59e0b', amount: 'UGX 56.7M' },
-  { label: '61-90 days', value: 18, color: '#f97316', amount: 'UGX 37.8M' },
-  { label: '90+ days', value: 12, color: '#ef4444', amount: 'UGX 24.8M' },
-];
+  const rawBuckets = useMemo(() => isReady ? CollectionsService.getAgingBuckets() : [], [isReady]);
+  const bucketColors: Record<string, string> = { 'Current': '#10b981', '1-30 Days': '#3b82f6', '31-60 Days': '#f59e0b', '61-90 Days': '#f97316', '90+ Days': '#ef4444' };
+  const agingBuckets = useMemo(() => rawBuckets.map((b: any) => ({
+    label: b.bucket || '',
+    value: Number(b.student_count) || 0,
+    color: bucketColors[b.bucket] || '#6b7280',
+    amount: `UGX ${(Number(b.amount) / 1e6).toFixed(1)}M`,
+  })), [rawBuckets]);
+
+  return { payments, agingBuckets };
+}
 
 const collectionTrend = [
   { month: 'Nov', amount: 113400000 },
@@ -49,6 +60,8 @@ function CollectionsHome() {
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'payments' | 'aging' | 'followups'>('payments');
+
+  const { payments, agingBuckets } = useCollectionsData(search);
 
   const filtered = payments.filter(
     (p) => p.student.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase())

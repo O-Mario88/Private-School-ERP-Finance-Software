@@ -655,6 +655,8 @@ export enum BudgetStatus {
   SUBMITTED = 'submitted',
   APPROVED = 'approved',
   ACTIVE = 'active',
+  RETURNED = 'returned',
+  REVISED = 'revised',
   CLOSED = 'closed',
 }
 
@@ -1233,6 +1235,7 @@ export enum BankAccountType {
 
 export enum ReconciliationStatus {
   RECONCILED = 'reconciled',
+  UNRECONCILED = 'unreconciled',
   PENDING = 'pending',
   IN_PROGRESS = 'in_progress',
   EXCEPTION = 'exception',
@@ -1348,4 +1351,273 @@ export interface ReconciliationAdjustment {
   accountId: string;
   createdDate: Date;
   createdBy: string;
+}
+
+// ============================================================================
+// INTERNATIONAL COUNTRY TEMPLATE SYSTEM
+// ============================================================================
+
+export type EducationStage = 'pre_primary' | 'primary' | 'lower_secondary' | 'upper_secondary';
+
+export type EducationSystemType =
+  | 'grade_based'
+  | 'standard_form_based'
+  | 'p_s_based'
+  | 'primary_jss_sss'
+  | 'kg_primary_jhs_shs'
+  | 'grade_form_based'
+  | 'class_form_based'
+  | 'primary_senior_based'
+  | 'primary_secondary';
+
+export type SymbolPosition = 'before' | 'after';
+
+export type TemplateConfidence = 'verified' | 'needs_validation';
+
+export type ProgressionLogic = 'annual' | 'term_based';
+
+export interface EducationLevel {
+  levelId: string;
+  stage: EducationStage;
+  stageGroupName: string;
+  shortCode: string;
+  longName: string;
+  sequence: number;
+  nextLevelId: string | null;
+  isCompletionExamStage: boolean;
+  completionExamName: string | null;
+  feeBillable: boolean;
+  promotionEligible: boolean;
+}
+
+export interface StageGroup {
+  stageGroupId: string;
+  stageGroupName: string;
+  stage: EducationStage;
+  levelIds: string[];
+  displayOrder: number;
+}
+
+export interface CountryTemplateCurrency {
+  currencyCode: string;
+  currencySymbol: string;
+  currencyName: string;
+  currencySubunitName?: string;
+  symbolPosition: SymbolPosition;
+  decimalPlaces: number;
+  thousandSeparator: string;
+  decimalSeparator: string;
+  defaultDisplayFormat: string;
+}
+
+export interface CountryTemplateCalendar {
+  academicYearLabelStyle: string;
+  academicYearStartMonth: number;
+  termCount: number;
+  defaultTermNames: string[];
+  semesterSupport: boolean;
+  progressionLogic: ProgressionLogic;
+  defaultPromotionBoundary: string;
+}
+
+export interface CountryTemplateTerminology {
+  studentLabel: string;
+  learnerLabel: string;
+  guardianLabel: string;
+  parentLabel: string;
+  payerLabel: string;
+  feeLabel: string;
+  reportCardLabel: string;
+  invoiceLabel: string;
+  receiptLabel: string;
+  classLabel: string;
+  streamLabel: string;
+  sectionLabel: string;
+  gradeLabel: string;
+  formLabel: string;
+  standardLabel: string;
+  headTeacherLabel: string;
+}
+
+export interface CountryTemplate {
+  countryName: string;
+  isoCountryCode: string;
+  isoCountryCode3: string;
+  region: string;
+  subregion: string;
+  primaryErpLanguage: string;
+  additionalSupportedLanguages: string[];
+  currency: CountryTemplateCurrency;
+  educationSystemType: EducationSystemType;
+  systemStructureCode: string;
+  prePrimaryEnabled: boolean;
+  levels: EducationLevel[];
+  stageGroups: StageGroup[];
+  calendar: CountryTemplateCalendar;
+  terminology: CountryTemplateTerminology;
+  templateVersion: number;
+  confidence: TemplateConfidence;
+}
+
+export interface InstitutionLevelOverride {
+  levelId: string;
+  displayAlias: string | null;
+  isActive: boolean;
+}
+
+export interface InstitutionTerminologyOverride {
+  termKey: keyof CountryTemplateTerminology;
+  customValue: string;
+  overriddenBy: string;
+  overriddenAt: Date;
+}
+
+export interface InstitutionCurrencyConfig {
+  primaryCurrencyCode: string;
+  secondaryCurrencyCode?: string;
+  displayPreference: 'symbol' | 'code' | 'both';
+}
+
+export type CurrencyDisplayContext = 'dashboard' | 'invoice' | 'statement' | 'pdf_print' | 'ledger';
+
+// ============================================================================
+// BUDGET ITEM SYSTEM (category-based hierarchy)
+// ============================================================================
+
+export enum BudgetItemFrequency {
+  ANNUAL = 'annual',
+  QUARTERLY = 'quarterly',
+  MONTHLY = 'monthly',
+  PER_TERM = 'per_term',
+  ONE_TIME = 'one_time',
+}
+
+export enum BudgetItemPriority {
+  ESSENTIAL = 'essential',
+  IMPORTANT = 'important',
+  DESIRABLE = 'desirable',
+  OPTIONAL = 'optional',
+}
+
+export enum BudgetVarianceLevel {
+  ON_TRACK = 'on_track',
+  WARNING = 'warning',
+  OVER_BUDGET = 'over_budget',
+  CRITICAL = 'critical',
+}
+
+export interface BudgetCategory {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  isDefault: boolean;
+  isActive: boolean;
+  institutionId?: string;
+}
+
+export interface BudgetItemGroup {
+  id: string;
+  categoryId: string;
+  code: string;
+  name: string;
+  description: string;
+  sortOrder: number;
+  isDefault: boolean;
+  isActive: boolean;
+  institutionId?: string;
+}
+
+export interface BudgetItem {
+  id: string;
+  budgetId: string;
+  categoryId: string;
+  itemGroupId: string;
+  code: string;
+  name: string;
+  description?: string;
+  annualAmount: number;
+  q1Amount: number;
+  q2Amount: number;
+  q3Amount: number;
+  q4Amount: number;
+  frequency: BudgetItemFrequency;
+  unitCount?: number;
+  unitCost?: number;
+  unitLabel?: string;
+  priority: BudgetItemPriority;
+  notes?: string;
+  isCustom: boolean;
+  isActive: boolean;
+  campusId?: string;
+  priorYearActual?: number;
+  priorYearBudget?: number;
+  sortOrder: number;
+}
+
+export interface BudgetSubItem {
+  id: string;
+  parentItemId: string;
+  name: string;
+  description?: string;
+  amount: number;
+  unitCount?: number;
+  unitCost?: number;
+  unitLabel?: string;
+  sortOrder: number;
+}
+
+export interface BudgetGLMapping {
+  id: string;
+  budgetItemId: string;
+  glAccountId: string;
+  mappingType: 'primary' | 'secondary';
+  notes?: string;
+}
+
+export interface BudgetTemplate {
+  id: string;
+  institutionId: string;
+  name: string;
+  description?: string;
+  baseYear?: string;
+  adjustmentFactor: number;
+  isActive: boolean;
+  createdBy: string;
+}
+
+export interface BudgetApproval {
+  id: string;
+  budgetId: string;
+  action: 'submitted' | 'approved' | 'returned' | 'revised';
+  performedBy: string;
+  comments?: string;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Budget library types — used by the default category/item library
+// ---------------------------------------------------------------------------
+
+export interface BudgetCategoryDefinition {
+  code: string;
+  name: string;
+  description: string;
+  typicalPercentage: string;
+  groups: BudgetItemGroupDefinition[];
+}
+
+export interface BudgetItemGroupDefinition {
+  code: string;
+  name: string;
+  items: BudgetItemDefinition[];
+}
+
+export interface BudgetItemDefinition {
+  name: string;
+  priority: BudgetItemPriority;
+  frequency: BudgetItemFrequency;
+  unitLabel?: string;
+  countryFilter?: string[];
 }

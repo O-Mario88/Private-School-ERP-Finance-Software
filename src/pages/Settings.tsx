@@ -3,10 +3,12 @@
  * System configuration, user preferences, school settings
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { CampusManager } from '../components/settings/CampusManager';
 import { PolicyEngine } from '../components/settings/PolicyEngine';
 import { FeeEngine } from '../components/settings/FeeEngine';
+import { useDB } from '../database';
+import { SettingsService } from '../database/DatabaseService';
 
 type SettingsView = 'school' | 'campuses' | 'policies' | 'fees';
 
@@ -77,14 +79,21 @@ export default function SettingsPage() {
 }
 
 function SchoolInfoForm() {
+  const { isReady } = useDB();
+  const inst = useMemo(() => isReady ? SettingsService.getInstitution() : null, [isReady]);
+  const name = (inst as any)?.name || 'Maple Private School';
+  const regNo = (inst as any)?.registration_number || 'REG-2020-001';
+  const email = (inst as any)?.email || 'bursar@maplesch.com';
+  const phone = (inst as any)?.phone || '+256 701 234 567';
+
   return (
     <div className="card" style={{ padding: 0 }}>
       <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--glass-border)' }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>School Information</h3>
       </div>
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <FormField label="School Name" defaultValue="Maple Private School" />
-        <FormField label="Registration Number" defaultValue="REG-2020-001" />
+        <FormField label="School Name" defaultValue={name} />
+        <FormField label="Registration Number" defaultValue={regNo} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div>
             <label style={{ display: 'block', fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Currency</label>
@@ -103,8 +112,8 @@ function SchoolInfoForm() {
             </select>
           </div>
         </div>
-        <FormField label="Email" defaultValue="bursar@maplesch.com" type="email" />
-        <FormField label="Phone" defaultValue="+256 701 234 567" type="tel" />
+        <FormField label="Email" defaultValue={email} type="email" />
+        <FormField label="Phone" defaultValue={phone} type="tel" />
         <div>
           <button style={{ padding: '10px 24px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
             Save Changes

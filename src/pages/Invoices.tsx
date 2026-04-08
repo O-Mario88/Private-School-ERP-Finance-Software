@@ -3,18 +3,30 @@
  * Invoice register, aging analysis, batch operations
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { BillingService, StudentService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
-const invoices = [
-  { id: 'INV-20250101', student: 'Nakato Sarah', class: 'S1 Blue', term: 'T1 2025', amount: 1215000, paid: 810000, balance: 405000, date: '2025-01-06', due: '2025-02-28', status: 'Partial' },
-  { id: 'INV-20250102', student: 'Ssemakula Brian', class: 'S1 Red', term: 'T1 2025', amount: 1215000, paid: 1215000, balance: 0, date: '2025-01-06', due: '2025-02-28', status: 'Paid' },
-  { id: 'INV-20250103', student: 'Tumusiime Joshua', class: 'S2 Blue', term: 'T1 2025', amount: 1404000, paid: 0, balance: 1404000, date: '2025-01-06', due: '2025-02-28', status: 'Overdue' },
-  { id: 'INV-20250104', student: 'Namutebi Grace', class: 'S2 Red', term: 'T1 2025', amount: 2349000, paid: 1620000, balance: 729000, date: '2025-01-06', due: '2025-03-15', status: 'Partial' },
-  { id: 'INV-20250105', student: 'Kizza Ronald', class: 'S3 Blue', term: 'T1 2025', amount: 1215000, paid: 1215000, balance: 0, date: '2025-01-06', due: '2025-03-15', status: 'Paid' },
-  { id: 'INV-20250106', student: 'Nabirye Fatuma', class: 'S3 Red', term: 'T1 2025', amount: 1404000, paid: 540000, balance: 864000, date: '2025-01-06', due: '2025-03-15', status: 'Partial' },
-  { id: 'INV-20250107', student: 'Okello James', class: 'S4 Blue', term: 'T1 2025', amount: 2349000, paid: 2349000, balance: 0, date: '2025-01-06', due: '2025-03-31', status: 'Paid' },
-  { id: 'INV-20250108', student: 'Ainembabazi Esther', class: 'S4 Red', term: 'T1 2025', amount: 1404000, paid: 810000, balance: 594000, date: '2025-01-06', due: '2025-03-31', status: 'Partial' },
-];
+function useInvoiceData(search: string, filter: string, ver: number) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? BillingService.listInvoices({ search: search || undefined, limit: 50 }) : [], [isReady, search, ver]);
+
+  const invoices = useMemo(() => raw.map((i: any) => ({
+    id: i.invoice_number || i.id,
+    student: i.student_name || '',
+    class: `${i.class_name || ''} ${i.stream_name || ''}`.trim(),
+    term: 'T1 2026',
+    amount: Number(i.total_amount) || 0,
+    paid: Number(i.paid_amount) || 0,
+    balance: Number(i.balance) || 0,
+    date: i.invoice_date || '',
+    due: i.due_date || '',
+    status: i.status === 'fully_paid' ? 'Paid' : i.status === 'overdue' ? 'Overdue' : i.status === 'partially_paid' ? 'Partial' : 'Unpaid',
+  })), [raw]);
+
+  return invoices;
+}
 
 const aging = [
   { label: 'Current', value: 35, color: '#3b82f6' },
@@ -36,13 +48,31 @@ const monthlyInvoices = [
 export default function InvoicesPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'Paid' | 'Unpaid' | 'Partial' | 'Overdue'>('all');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ student_id: '', due_date: '', description: '', quantity: '1', unit_price: '' });
+  const { isReady } = useDB();
+
+  const invoices = useInvoiceData(search, filter, ver);
+  const studentList = useMemo(() => isReady ? StudentService.list({ limit: 300 }) : [], [isReady, ver]);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.student_id || !form.due_date || !form.unit_price) return;
+    BillingService.createInvoice({
+      student_id: form.student_id, due_date: form.due_date,
+      lines: [{ description: form.description || 'Tuition Fee', quantity: Number(form.quantity) || 1, unit_price: Number(form.unit_price) }],
+    });
+    setShowForm(false);
+    setForm({ student_id: '', due_date: '', description: '', quantity: '1', unit_price: '' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const totalInvoiced = invoices.reduce((s, i) => s + i.amount, 0);
   const totalCollected = invoices.reduce((s, i) => s + i.paid, 0);
   const totalOutstanding = invoices.reduce((s, i) => s + i.balance, 0);
   const overdue = invoices.filter(i => i.status === 'Overdue').length;
 
-  let filtered = invoices.filter(i => i.student.toLowerCase().includes(search.toLowerCase()) || i.id.toLowerCase().includes(search.toLowerCase()));
+  let filtered = invoices;
   if (filter !== 'all') filtered = filtered.filter(i => i.status === filter);
 
   return (
@@ -56,7 +86,7 @@ export default function InvoicesPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <SmBtn label="Batch Invoice" />
           <SmBtn label="Credit Note" />
-          <SmBtn label="+ New Invoice" primary />
+          <SmBtn label="+ New Invoice" primary onClick={() => setShowForm(true)} />
         </div>
       </div>
 
@@ -132,6 +162,26 @@ export default function InvoicesPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="New Invoice" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Create Invoice">
+          <div style={fieldFull}>
+            <label style={fieldLabel}>Student *</label>
+            <select style={fieldInput} value={form.student_id} onChange={e => setForm({ ...form, student_id: e.target.value })}>
+              <option value="">Select student…</option>
+              {studentList.map((s: any) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name} ({s.admission_no})</option>)}
+            </select>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Description</label><input style={fieldInput} placeholder="Tuition Fee" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Due Date *</label><input type="date" style={fieldInput} value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Quantity</label><input type="number" style={fieldInput} value={form.quantity} onChange={e => setForm({ ...form, quantity: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Unit Price (UGX) *</label><input type="number" style={fieldInput} value={form.unit_price} onChange={e => setForm({ ...form, unit_price: e.target.value })} /></div>
+          </div>
+        </FormModal>
+      )}
     </div>
   );
 }
@@ -139,7 +189,7 @@ export default function InvoicesPage() {
 function KPI({ icon, title, value, sub, positive }: { icon: string; title: string; value: string; sub: string; positive: boolean }) {
   return (<div className="card" style={{ padding: '20px 22px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}><span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500 }}>{title}</span><div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)', fontSize: 16 }}>{icon}</div></div><div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div><div style={{ marginTop: 8, fontSize: 12, color: positive ? '#34d399' : '#fbbf24' }}>{sub}</div></div>);
 }
-function SmBtn({ label, primary }: { label: string; primary?: boolean }) { return <button style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
+function SmBtn({ label, primary, onClick }: { label: string; primary?: boolean; onClick?: () => void }) { return <button onClick={onClick} style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
 function Badge({ label }: { label: string }) { const m: Record<string, { bg: string; b: string; t: string }> = { Paid: { bg: 'rgba(16,185,129,0.12)', b: 'rgba(16,185,129,0.3)', t: '#6ee7b7' }, Unpaid: { bg: 'rgba(239,68,68,0.12)', b: 'rgba(239,68,68,0.3)', t: '#fca5a5' }, Partial: { bg: 'rgba(245,158,11,0.12)', b: 'rgba(245,158,11,0.3)', t: '#fcd34d' }, Overdue: { bg: 'rgba(239,68,68,0.15)', b: 'rgba(239,68,68,0.4)', t: '#f87171' } }; const c = m[label] ?? m.Unpaid; return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, background: c.bg, border: `1px solid ${c.b}`, color: c.t }}>{label}</span>; }
 
 function BarChart({ data }: { data: { month: string; count: number; value: number }[] }) {

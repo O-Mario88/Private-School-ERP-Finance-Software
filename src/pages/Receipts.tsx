@@ -3,18 +3,24 @@
  * Receipt register, voided receipts, cashier activity
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDB } from '../database';
+import { PaymentService } from '../database/DatabaseService';
 
-const receipts = [
-  { id: 'RCP-20250001', student: 'Nakato Sarah', amount: 810000, method: 'MTN MoMo', invoice: 'INV-20250101', date: '2025-03-01', printedBy: 'Bursar', status: 'Issued' },
-  { id: 'RCP-20250002', student: 'Ssemakula Brian', amount: 1215000, method: 'Bank Transfer', invoice: 'INV-20250102', date: '2025-03-02', printedBy: 'Bursar', status: 'Issued' },
-  { id: 'RCP-20250003', student: 'Tumusiime Joshua', amount: 540000, method: 'Airtel Money', invoice: 'INV-20250103', date: '2025-03-03', printedBy: 'Accounts', status: 'Issued' },
-  { id: 'RCP-20250004', student: 'Namutebi Grace', amount: 1620000, method: 'MTN MoMo', invoice: 'INV-20250104', date: '2025-03-04', printedBy: 'Bursar', status: 'Voided' },
-  { id: 'RCP-20250005', student: 'Kizza Ronald', amount: 405000, method: 'Cash', invoice: 'INV-20250105', date: '2025-03-05', printedBy: 'Accounts', status: 'Issued' },
-  { id: 'RCP-20250006', student: 'Nabirye Fatuma', amount: 810000, method: 'MTN MoMo', invoice: 'INV-20250106', date: '2025-03-05', printedBy: 'Bursar', status: 'Issued' },
-  { id: 'RCP-20250007', student: 'Okello James', amount: 2349000, method: 'Bank Transfer', invoice: 'INV-20250107', date: '2025-03-06', printedBy: 'Accounts', status: 'Issued' },
-  { id: 'RCP-20250008', student: 'Ainembabazi Esther', amount: 675000, method: 'Cheque', invoice: 'INV-20250108', date: '2025-03-07', printedBy: 'Bursar', status: 'Issued' },
-];
+function useReceiptData(search: string) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? PaymentService.listReceipts() : [], [isReady]);
+  return useMemo(() => raw.map((r: any) => ({
+    id: r.receipt_number || r.id,
+    student: r.student_name || '',
+    amount: Number(r.amount) || 0,
+    method: r.payment_method || '',
+    invoice: r.payment_id || '',
+    date: (r.receipt_date || '').slice(0, 10),
+    printedBy: r.issued_by || 'System',
+    status: r.status === 'issued' ? 'Issued' : r.status === 'voided' ? 'Voided' : 'Pending',
+  })), [raw]);
+}
 
 const cashierActivity = [
   { label: 'Admin', value: 55, color: '#3b82f6' },
@@ -31,6 +37,8 @@ const dailyReceipts = [
 export default function ReceiptsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'Issued' | 'Pending' | 'Voided'>('all');
+
+  const receipts = useReceiptData(search);
 
   const totalIssued = receipts.filter(r => r.status === 'Issued').length;
   const totalAmount = receipts.reduce((s, r) => s + r.amount, 0);

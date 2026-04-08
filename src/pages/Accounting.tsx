@@ -3,10 +3,12 @@
  * General ledger, trial balance, journal entries
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
 import JournalEntries from './accounting/JournalEntries';
 import TrialBalance from './accounting/TrialBalance';
+import { useDB } from '../database';
+import { AccountingService } from '../database/DatabaseService';
 
 export default function AccountingPage() {
   return (
@@ -18,15 +20,21 @@ export default function AccountingPage() {
   );
 }
 
-/* ── Mock data ─────────────────────────────────────────────────── */
-const glEntries = [
-  { id: 'JE-001', date: '2026-04-06', ref: 'JE-2026-001', description: 'Tuition income — Term 2', debit: 40500000, credit: 0, account: '4100 — Tuition Revenue', status: 'Posted' },
-  { id: 'JE-002', date: '2026-04-05', ref: 'JE-2026-002', description: 'Bank deposit — collections', debit: 0, credit: 22950000, account: '1100 — Cash at Bank', status: 'Posted' },
-  { id: 'JE-003', date: '2026-04-04', ref: 'JE-2026-003', description: 'Salary expense — March', debit: 16740000, credit: 0, account: '5100 — Salaries', status: 'Posted' },
-  { id: 'JE-004', date: '2026-04-03', ref: 'JE-2026-004', description: 'Transport fuel purchase', debit: 1215000, credit: 0, account: '5300 — Transport Costs', status: 'Approved' },
-  { id: 'JE-005', date: '2026-04-02', ref: 'JE-2026-005', description: 'Stationery purchase', debit: 405000, credit: 0, account: '5200 — Supplies', status: 'Draft' },
-  { id: 'JE-006', date: '2026-04-01', ref: 'JE-2026-006', description: 'Boarding fees — Term 2', debit: 24300000, credit: 0, account: '4200 — Boarding Revenue', status: 'Posted' },
-];
+/* ── Data from SQLite ────────────────────────────────────────── */
+function useAccountingData() {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? AccountingService.listJournals(undefined, 50) : [], [isReady]);
+  return useMemo(() => raw.map((j: any) => ({
+    id: j.id,
+    date: (j.journal_date || '').slice(0, 10),
+    ref: j.journal_number || '',
+    description: j.description || '',
+    debit: Number(j.total_debit) || 0,
+    credit: Number(j.total_credit) || 0,
+    account: j.source || 'General',
+    status: j.status === 'posted' ? 'Posted' : j.status === 'approved' ? 'Approved' : 'Draft',
+  })), [raw]);
+}
 
 const glTrend = [
   { month: 'Nov', dr: 75600000, cr: 74250000 },
@@ -48,6 +56,8 @@ function AccountingHome() {
   const navigate = useNavigate();
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
+
+  const glEntries = useAccountingData();
 
   const filtered = glEntries.filter(
     (e) => e.description.toLowerCase().includes(search.toLowerCase()) || e.ref.toLowerCase().includes(search.toLowerCase())

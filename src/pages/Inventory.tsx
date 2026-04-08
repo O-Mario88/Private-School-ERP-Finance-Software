@@ -3,18 +3,27 @@
  * Stock levels, low-stock alerts, movements, valuation
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { InventoryService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
-const items = [
-  { id: 'INV-001', name: 'Exercise Books (48pg)', category: 'Stationery', unit: 'pcs', stock: 1200, reorder: 500, cost: 1215, value: 1458000, location: 'Store A', status: 'In Stock' },
-  { id: 'INV-002', name: 'Textbooks - Math S1', category: 'Textbooks', unit: 'pcs', stock: 45, reorder: 50, cost: 22950, value: 1032750, location: 'Library', status: 'Low Stock' },
-  { id: 'INV-003', name: 'Chalk Box (White)', category: 'Supplies', unit: 'boxes', stock: 80, reorder: 30, cost: 6750, value: 540000, location: 'Store A', status: 'In Stock' },
-  { id: 'INV-004', name: 'Lab Chemicals Set', category: 'Lab', unit: 'sets', stock: 5, reorder: 10, cost: 324000, value: 1620000, location: 'Lab Store', status: 'Low Stock' },
-  { id: 'INV-005', name: 'Printer Paper A4', category: 'Stationery', unit: 'reams', stock: 200, reorder: 100, cost: 14850, value: 2970000, location: 'Admin', status: 'In Stock' },
-  { id: 'INV-006', name: 'Sports Balls (Football)', category: 'Sports', unit: 'pcs', stock: 0, reorder: 10, cost: 67500, value: 0, location: 'PE Store', status: 'Out of Stock' },
-  { id: 'INV-007', name: 'Cleaning Detergent', category: 'Supplies', unit: 'ltrs', stock: 150, reorder: 50, cost: 4860, value: 729000, location: 'Store B', status: 'In Stock' },
-  { id: 'INV-008', name: 'First Aid Kit', category: 'Medical', unit: 'kits', stock: 8, reorder: 5, cost: 94500, value: 756000, location: 'Sick Bay', status: 'In Stock' },
-];
+function useInventoryData(search: string, ver: number) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? InventoryService.listItems() : [], [isReady, ver]);
+  return useMemo(() => raw.map((i: any) => ({
+    id: i.id,
+    name: i.name || '',
+    category: i.category || '',
+    unit: i.unit_of_measure || 'pcs',
+    stock: Number(i.quantity_on_hand) || 0,
+    reorder: Number(i.reorder_level) || 0,
+    cost: Number(i.unit_cost) || 0,
+    value: (Number(i.unit_cost) || 0) * (Number(i.quantity_on_hand) || 0),
+    location: i.location || '',
+    status: Number(i.quantity_on_hand) === 0 ? 'Out of Stock' : Number(i.quantity_on_hand) <= Number(i.reorder_level) ? 'Low Stock' : 'In Stock',
+  })), [raw]);
+}
 
 const movements = [
   { date: '2025-03-08', item: 'Exercise Books (48pg)', type: 'Issue', qty: -100, by: 'Admin' },
@@ -41,6 +50,19 @@ export default function InventoryPage() {
   const [search, setSearch] = useState('');
   const [tab, setTab] = useState<'stock' | 'movements'>('stock');
   const [filter, setFilter] = useState<'all' | 'Low Stock' | 'Out of Stock'>('all');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', category: 'Stationery', unit_of_measure: 'pcs', unit_cost: '', quantity_on_hand: '', reorder_level: '10' });
+
+  const items = useInventoryData(search, ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.name || !form.unit_cost) return;
+    InventoryService.addItem({ name: form.name, category: form.category, unit_of_measure: form.unit_of_measure, unit_cost: Number(form.unit_cost), quantity_on_hand: Number(form.quantity_on_hand) || 0, reorder_level: Number(form.reorder_level) });
+    setShowForm(false);
+    setForm({ name: '', category: 'Stationery', unit_of_measure: 'pcs', unit_cost: '', quantity_on_hand: '', reorder_level: '10' });
+    setVer(v => v + 1);
+  }, [form]);
 
   const totalValue = items.reduce((s, i) => s + i.value, 0);
   const lowStock = items.filter(i => i.status === 'Low Stock').length;
@@ -59,7 +81,7 @@ export default function InventoryPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <SmBtn label="Stock Take" />
-          <SmBtn label="+ Add Item" primary />
+          <SmBtn label="+ Add Item" primary onClick={() => setShowForm(true)} />
         </div>
       </div>
 
@@ -152,6 +174,21 @@ export default function InventoryPage() {
           )}
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="Add Inventory Item" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Add Item">
+          <div style={fieldFull}><label style={fieldLabel}>Item Name *</label><input style={fieldInput} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Exercise Books (48pg)" /></div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Category</label><select style={fieldInput} value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}><option>Stationery</option><option>Textbooks</option><option>Supplies</option><option>Lab</option><option>Other</option></select></div>
+            <div><label style={fieldLabel}>Unit</label><input style={fieldInput} value={form.unit_of_measure} onChange={e => setForm({ ...form, unit_of_measure: e.target.value })} placeholder="pcs, kg, litre" /></div>
+          </div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Unit Cost (UGX) *</label><input type="number" style={fieldInput} value={form.unit_cost} onChange={e => setForm({ ...form, unit_cost: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Initial Stock Qty</label><input type="number" style={fieldInput} value={form.quantity_on_hand} onChange={e => setForm({ ...form, quantity_on_hand: e.target.value })} /></div>
+          </div>
+          <div style={fieldFull}><label style={fieldLabel}>Reorder Level</label><input type="number" style={fieldInput} value={form.reorder_level} onChange={e => setForm({ ...form, reorder_level: e.target.value })} /></div>
+        </FormModal>
+      )}
     </div>
   );
 }
@@ -159,7 +196,7 @@ export default function InventoryPage() {
 function KPI({ icon, title, value, sub, positive }: { icon: string; title: string; value: string; sub: string; positive: boolean }) {
   return (<div className="card" style={{ padding: '20px 22px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}><span style={{ color: 'var(--text-secondary)', fontSize: 13, fontWeight: 500 }}>{title}</span><div style={{ width: 36, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.15)', fontSize: 16 }}>{icon}</div></div><div style={{ fontSize: 26, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>{value}</div><div style={{ marginTop: 8, fontSize: 12, color: positive ? '#34d399' : '#fbbf24' }}>{sub}</div></div>);
 }
-function SmBtn({ label, primary }: { label: string; primary?: boolean }) { return <button style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
+function SmBtn({ label, primary, onClick }: { label: string; primary?: boolean; onClick?: () => void }) { return <button onClick={onClick} style={{ padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: primary ? 600 : 500, border: primary ? 'none' : '1px solid var(--glass-border)', background: primary ? 'linear-gradient(135deg,#3b82f6,#2563eb)' : 'rgba(255,255,255,0.06)', color: primary ? '#fff' : 'var(--text-secondary)', cursor: 'pointer', boxShadow: primary ? '0 0 20px rgba(59,130,246,0.2)' : 'none' }}>{label}</button>; }
 function Badge({ label }: { label: string }) { const m: Record<string, { bg: string; b: string; t: string }> = { 'In Stock': { bg: 'rgba(16,185,129,0.12)', b: 'rgba(16,185,129,0.3)', t: '#6ee7b7' }, 'Low Stock': { bg: 'rgba(245,158,11,0.12)', b: 'rgba(245,158,11,0.3)', t: '#fcd34d' }, 'Out of Stock': { bg: 'rgba(239,68,68,0.12)', b: 'rgba(239,68,68,0.3)', t: '#fca5a5' } }; const c = m[label] ?? m['In Stock']; return <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, background: c.bg, border: `1px solid ${c.b}`, color: c.t }}>{label}</span>; }
 
 function MiniLineChart({ data, gradId }: { data: { month: string; val: number }[]; gradId: string }) {

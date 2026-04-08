@@ -3,18 +3,25 @@
  * Payment register, allocation, method breakdown
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useDB } from '../database';
+import { PaymentService } from '../database/DatabaseService';
 
-const payments = [
-  { id: 'PAY-20250301', student: 'Nakato Sarah', amount: 810000, method: 'MTN MoMo', ref: 'MOMO-884523', date: '2025-03-01', class: 'S1 Blue', status: 'Verified' },
-  { id: 'PAY-20250302', student: 'Ssemakula Brian', amount: 1215000, method: 'Bank Transfer', ref: 'RTGS-220145', date: '2025-03-02', class: 'S1 Red', status: 'Verified' },
-  { id: 'PAY-20250303', student: 'Tumusiime Joshua', amount: 540000, method: 'Airtel Money', ref: 'AIRT-661234', date: '2025-03-03', class: 'S2 Blue', status: 'Verified' },
-  { id: 'PAY-20250304', student: 'Namutebi Grace', amount: 1620000, method: 'MTN MoMo', ref: 'MOMO-884601', date: '2025-03-04', class: 'S2 Red', status: 'Pending' },
-  { id: 'PAY-20250305', student: 'Kizza Ronald', amount: 405000, method: 'Cash', ref: 'CASH-001122', date: '2025-03-05', class: 'S3 Blue', status: 'Verified' },
-  { id: 'PAY-20250306', student: 'Nabirye Fatuma', amount: 810000, method: 'MTN MoMo', ref: 'MOMO-884755', date: '2025-03-05', class: 'S3 Red', status: 'Verified' },
-  { id: 'PAY-20250307', student: 'Okello James', amount: 2349000, method: 'Bank Transfer', ref: 'RTGS-220198', date: '2025-03-06', class: 'S4 Blue', status: 'Verified' },
-  { id: 'PAY-20250308', student: 'Ainembabazi Esther', amount: 675000, method: 'Airtel Money', ref: 'AIRT-661301', date: '2025-03-07', class: 'S4 Red', status: 'Pending' },
-];
+function usePaymentData(search: string) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? PaymentService.list({ search: search || undefined, limit: 50 }) : [], [isReady, search]);
+
+  return useMemo(() => raw.map((p: any) => ({
+    id: p.payment_number || p.id,
+    student: p.student_name || '',
+    amount: Number(p.amount) || 0,
+    method: p.payment_method === 'mobile_money' ? 'MTN MoMo' : p.payment_method === 'bank_transfer' ? 'Bank Transfer' : p.payment_method === 'cash' ? 'Cash' : p.payment_method === 'cheque' ? 'Cheque' : p.payment_method,
+    ref: p.reference_no || '',
+    date: p.payment_date || '',
+    class: p.class_name || '',
+    status: p.status === 'recorded' ? 'Verified' : 'Pending',
+  })), [raw]);
+}
 
 const methodBreakdown = [
   { label: 'MTN MoMo', value: 42, color: '#f59e0b' },
@@ -34,12 +41,14 @@ export default function PaymentsPage() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'Verified' | 'Pending'>('all');
 
+  const payments = usePaymentData(search);
+
   const totalReceived = payments.reduce((s, p) => s + p.amount, 0);
   const allocated = payments.filter(p => p.status === 'Verified');
   const unallocated = payments.filter(p => p.status === 'Pending');
   const momo = payments.filter(p => p.method === 'MTN MoMo').reduce((s, p) => s + p.amount, 0);
 
-  let filtered = payments.filter(p => p.student.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase()) || p.ref.toLowerCase().includes(search.toLowerCase()));
+  let filtered = payments;
   if (filter !== 'all') filtered = filtered.filter(p => p.status === filter);
 
   return (

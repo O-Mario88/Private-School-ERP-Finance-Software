@@ -3,8 +3,10 @@
  * Student invoicing, family management, fee engine, transport, inventory, bursary, collections
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useUIStore } from '../store';
+import { useDB } from '../database';
+import { StudentService, BillingService } from '../database/DatabaseService';
 import { TransportManager } from '../components/school/TransportManager';
 import { InventoryManager } from '../components/school/InventoryManager';
 import { BursaryDashboard } from '../components/school/BursaryDashboard';
@@ -31,21 +33,31 @@ export default function SchoolPage() {
   const addNotification = useUIStore((state) => state.addNotification);
   const [view, setView] = useState<SchoolView>('home');
 
-  const students: Student[] = [
-    { id: '1', registrationNumber: 'STU-2024-001', firstName: 'John', lastName: 'Mukasa', className: 'S1A', familyName: 'Mukasa Family', familyId: 'FAM-001' },
-    { id: '2', registrationNumber: 'STU-2024-002', firstName: 'Jane', lastName: 'Mukasa', className: 'S2B', familyName: 'Mukasa Family', familyId: 'FAM-001' },
-    { id: '3', registrationNumber: 'STU-2024-003', firstName: 'Peter', lastName: 'Ssempijja', className: 'S3A', familyName: 'Ssempijja Family', familyId: 'FAM-002' },
-    { id: '4', registrationNumber: 'STU-2024-004', firstName: 'Amina', lastName: 'Nakato', className: 'S1B', familyName: 'Nakato Family', familyId: 'FAM-003' },
-    { id: '5', registrationNumber: 'STU-2024-005', firstName: 'Brian', lastName: 'Okello', className: 'S4A', familyName: 'Okello Family', familyId: 'FAM-004' },
-  ];
+  const { isReady } = useDB();
+  const rawStudents = useMemo(() => isReady ? StudentService.list({ limit: 20 }) : [], [isReady]);
+  const students: Student[] = useMemo(() => rawStudents.map((s: any) => ({
+    id: s.id,
+    registrationNumber: s.admission_no || s.id,
+    firstName: s.first_name || '',
+    lastName: s.last_name || '',
+    className: `${s.class_name || ''} ${s.stream_name || ''}`.trim(),
+    familyName: `${s.last_name} Family`,
+    familyId: `FAM-${s.id.slice(-3)}`,
+  })), [rawStudents]);
 
-  const invoices: Invoice[] = [
-    { id: '1', invoiceNumber: 'INV-2026-001', studentId: '1', studentName: 'John Mukasa', date: '2026-04-01', dueDate: '2026-04-15', status: 'issued', amount: 150000, paid: 100000, balance: 50000 },
-    { id: '2', invoiceNumber: 'INV-2026-002', studentId: '2', studentName: 'Jane Mukasa', date: '2026-04-01', dueDate: '2026-04-15', status: 'fully_paid', amount: 150000, paid: 150000, balance: 0 },
-    { id: '3', invoiceNumber: 'INV-2026-003', studentId: '3', studentName: 'Peter Ssempijja', date: '2026-04-01', dueDate: '2026-04-15', status: 'overdue', amount: 200000, paid: 0, balance: 200000 },
-    { id: '4', invoiceNumber: 'INV-2026-004', studentId: '4', studentName: 'Amina Nakato', date: '2026-04-01', dueDate: '2026-04-15', status: 'issued', amount: 75000, paid: 25000, balance: 50000 },
-    { id: '5', invoiceNumber: 'INV-2026-005', studentId: '5', studentName: 'Brian Okello', date: '2026-04-02', dueDate: '2026-04-16', status: 'fully_paid', amount: 180000, paid: 180000, balance: 0 },
-  ];
+  const rawInvoices = useMemo(() => isReady ? BillingService.listInvoices({ limit: 20 }) : [], [isReady]);
+  const invoices: Invoice[] = useMemo(() => rawInvoices.map((i: any) => ({
+    id: i.id,
+    invoiceNumber: i.invoice_number || '',
+    studentId: i.student_id || '',
+    studentName: i.student_name || '',
+    date: (i.invoice_date || '').slice(0, 10),
+    dueDate: (i.due_date || '').slice(0, 10),
+    status: i.status || 'issued',
+    amount: Number(i.total_amount) || 0,
+    paid: Number(i.paid_amount) || 0,
+    balance: Number(i.balance) || 0,
+  })), [rawInvoices]);
 
   const [formData, setFormData] = useState({
     studentIds: [] as string[],

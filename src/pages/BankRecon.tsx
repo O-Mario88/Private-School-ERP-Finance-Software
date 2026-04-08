@@ -3,101 +3,64 @@
  * Complete transaction matching and account reconciliation workflow
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import BankReconciliationUI from '../components/treasury/BankReconciliationUI';
 import { BankReconciliationService } from '../services/BankReconciliationService';
+import { useDB } from '../database';
+import { BankReconService } from '../database/DatabaseService';
 import {
   BankAccount,
+  BankAccountType,
   BankStatement,
   BankStatementTransaction,
   UnmatchedTransaction,
   ReconciliationMatch,
   BankReconciliation,
   ReconciliationStatus,
+  TransactionSide,
   JournalEntry,
 } from '../types';
 
-// Mock data for demonstration
-const mockBankAccounts: BankAccount[] = [
-  {
-    id: 'BA-001',
-    bankName: 'Stanbic Bank',
-    accountNumber: '9100234567890',
-    accountType: 'current',
-    accountHolder: 'Maple School',
-    currency: 'UGX',
-    openingBalance: 109350000,
-    bookBalance: 113400000,
-    statementBalance: 117450000,
-    lastReconciledDate: new Date('2025-02-28'),
-    lastReconciledBalance: 109350000,
-    reconciliationStatus: ReconciliationStatus.UNRECONCILED,
-    isActive: true,
-    createdDate: new Date('2024-01-01'),
-    createdBy: 'system',
-  },
-  {
-    id: 'BA-002',
-    bankName: 'Centenary Bank',
-    accountNumber: '2100987654321',
-    accountType: 'current',
-    accountHolder: 'Maple School',
-    currency: 'UGX',
-    openingBalance: 83700000,
-    bookBalance: 83700000,
-    statementBalance: 83700000,
-    lastReconciledDate: new Date('2025-03-05'),
-    lastReconciledBalance: 83700000,
-    reconciliationStatus: ReconciliationStatus.RECONCILED,
-    isActive: true,
-    createdDate: new Date('2024-01-01'),
-    createdBy: 'system',
-  },
-  {
-    id: 'BA-003',
-    bankName: 'MTN MoMo Float',
-    accountNumber: '0770345678',
-    accountType: 'mobile',
-    accountHolder: 'Maple School',
-    currency: 'UGX',
-    openingBalance: 21060000,
-    bookBalance: 22950000,
-    statementBalance: 24840000,
-    lastReconciledDate: new Date('2025-03-01'),
-    lastReconciledBalance: 21060000,
-    reconciliationStatus: ReconciliationStatus.UNRECONCILED,
-    isActive: true,
-    createdDate: new Date('2024-03-01'),
-    createdBy: 'system',
-  },
-  {
-    id: 'BA-004',
-    bankName: 'dfcu Bank',
-    accountNumber: '4100567890234',
-    accountType: 'savings',
-    accountHolder: 'Maple School',
-    currency: 'UGX',
-    openingBalance: 75600000,
-    bookBalance: 75600000,
-    statementBalance: 75600000,
-    lastReconciledDate: new Date('2025-03-06'),
-    lastReconciledBalance: 75600000,
-    reconciliationStatus: ReconciliationStatus.RECONCILED,
-    isActive: true,
-    createdDate: new Date('2024-02-01'),
-    createdBy: 'system',
-  },
-];
+/* ── Data from SQLite ── */
+function useBankReconData() {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? BankReconService.getBankAccounts() : [], [isReady]);
 
-const mockUnmatchedTxns: UnmatchedTransaction[] = [
+  const typeMap: Record<string, BankAccountType> = {
+    current: BankAccountType.CURRENT,
+    savings: BankAccountType.SAVINGS,
+    mobile: BankAccountType.MOBILE,
+    fixed_deposit: BankAccountType.FIXED_DEPOSIT,
+  };
+
+  return useMemo(() => raw.map((a: any): BankAccount => ({
+    id: a.id,
+    bankName: a.bank_name || '',
+    accountNumber: a.account_number || '',
+    accountType: typeMap[(a.account_type || 'current').toLowerCase()] || BankAccountType.CURRENT,
+    accountHolder: a.account_name || 'Maple School',
+    currency: a.currency || 'UGX',
+    openingBalance: Number(a.opening_balance) || 0,
+    bookBalance: Number(a.current_balance) || 0,
+    statementBalance: Number(a.current_balance) || 0,
+    lastReconciledDate: a.created_at ? new Date(a.created_at) : new Date(),
+    lastReconciledBalance: Number(a.opening_balance) || 0,
+    reconciliationStatus: ReconciliationStatus.UNRECONCILED,
+    isActive: Boolean(a.is_active),
+    createdDate: a.created_at ? new Date(a.created_at) : new Date(),
+    createdBy: 'system',
+  })), [raw]);
+}
+
+const initialUnmatchedTxns: UnmatchedTransaction[] = [
   {
     id: 'UT-001',
     bankAccountId: 'BA-001',
     bankTransactionId: 'BST-001',
-    transactionDate: new Date('2025-03-02'),
+    transactionDate: new Date('2026-03-02'),
     description: 'MTN MoMo Collection',
     amount: 2295000,
-    side: 'bank',
+    side: TransactionSide.BANK,
     transactionType: 'credit',
     daysOld: 6,
     createdDate: new Date(),
@@ -106,10 +69,10 @@ const mockUnmatchedTxns: UnmatchedTransaction[] = [
     id: 'UT-002',
     bankAccountId: 'BA-001',
     bankTransactionId: 'BST-002',
-    transactionDate: new Date('2025-03-03'),
-    description: 'Cheque #004521 – Supplier',
+    transactionDate: new Date('2026-03-03'),
+    description: 'Cheque #004521 \u2013 Supplier',
     amount: 810000,
-    side: 'book',
+    side: TransactionSide.BOOK,
     transactionType: 'debit',
     daysOld: 5,
     createdDate: new Date(),
@@ -118,10 +81,10 @@ const mockUnmatchedTxns: UnmatchedTransaction[] = [
     id: 'UT-003',
     bankAccountId: 'BA-001',
     bankTransactionId: 'BST-003',
-    transactionDate: new Date('2025-03-04'),
-    description: 'Bank Charges – March',
+    transactionDate: new Date('2026-03-04'),
+    description: 'Bank Charges \u2013 March',
     amount: 67500,
-    side: 'bank',
+    side: TransactionSide.BANK,
     transactionType: 'debit',
     daysOld: 4,
     createdDate: new Date(),
@@ -130,10 +93,10 @@ const mockUnmatchedTxns: UnmatchedTransaction[] = [
     id: 'UT-004',
     bankAccountId: 'BA-003',
     bankTransactionId: 'BST-004',
-    transactionDate: new Date('2025-03-05'),
+    transactionDate: new Date('2026-03-05'),
     description: 'MTN MoMo Transfer In',
     amount: 1215000,
-    side: 'bank',
+    side: TransactionSide.BANK,
     transactionType: 'credit',
     daysOld: 3,
     createdDate: new Date(),
@@ -142,10 +105,10 @@ const mockUnmatchedTxns: UnmatchedTransaction[] = [
     id: 'UT-005',
     bankAccountId: 'BA-001',
     bankTransactionId: 'BST-005',
-    transactionDate: new Date('2025-03-05'),
-    description: 'Parent payment – Wire',
+    transactionDate: new Date('2026-03-05'),
+    description: 'Parent payment \u2013 Wire',
     amount: 1755000,
-    side: 'bank',
+    side: TransactionSide.BANK,
     transactionType: 'credit',
     daysOld: 3,
     createdDate: new Date(),
@@ -154,10 +117,10 @@ const mockUnmatchedTxns: UnmatchedTransaction[] = [
     id: 'UT-006',
     bankAccountId: 'BA-003',
     bankTransactionId: 'BST-006',
-    transactionDate: new Date('2025-03-06'),
+    transactionDate: new Date('2026-03-06'),
     description: 'Utility Bill Payment',
     amount: 675000,
-    side: 'book',
+    side: TransactionSide.BOOK,
     transactionType: 'debit',
     daysOld: 2,
     createdDate: new Date(),
@@ -190,13 +153,19 @@ const mockMatches: ReconciliationMatch[] = [
 ];
 
 export default function BankReconPage() {
-  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(mockBankAccounts);
+  const dbBankAccounts = useBankReconData();
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>();
   const [currentStatement, setCurrentStatement] = useState<BankStatement>();
-  const [unmatchedItems, setUnmatchedItems] = useState<UnmatchedTransaction[]>(mockUnmatchedTxns);
+  const [unmatchedItems, setUnmatchedItems] = useState<UnmatchedTransaction[]>(initialUnmatchedTxns);
   const [matches, setMatches] = useState<ReconciliationMatch[]>(mockMatches);
   const [reconciliation, setReconciliation] = useState<BankReconciliation>();
   const [isLoading, setIsLoading] = useState(false);
+
+  // Sync DB accounts into state once loaded
+  useMemo(() => {
+    if (dbBankAccounts.length > 0) setBankAccounts(dbBankAccounts);
+  }, [dbBankAccounts]);
 
   const handleAccountSelect = useCallback((accountId: string) => {
     setSelectedAccountId(accountId);

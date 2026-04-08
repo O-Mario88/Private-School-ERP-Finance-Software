@@ -3,17 +3,29 @@
  * Supplier bills, payments, and AP management
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useDB } from '../database';
+import { APService } from '../database/DatabaseService';
+import FormModal, { fieldLabel, fieldInput, fieldRow, fieldFull } from '../components/FormModal';
 
 /* ── Mock data ─────────────────────────────────────────────────── */
-const bills = [
-  { id: 'BILL-001', date: '2026-04-06', supplier: 'Kampala Paper Supplies', ref: 'INV-9823', description: 'Exercise books & stationery', amount: 1755000, paid: 1755000, balance: 0, status: 'Paid', due: '2026-04-20' },
-  { id: 'BILL-002', date: '2026-04-05', supplier: 'Hot Meals Uganda', ref: 'INV-4401', description: 'March catering contract', amount: 8640000, paid: 4320000, balance: 4320000, status: 'Partial', due: '2026-04-15' },
-  { id: 'BILL-003', date: '2026-04-04', supplier: 'TechEd Solutions', ref: 'INV-7756', description: 'Lab equipment maintenance', amount: 2700000, paid: 0, balance: 2700000, status: 'Pending', due: '2026-04-18' },
-  { id: 'BILL-004', date: '2026-04-03', supplier: 'SGA Security', ref: 'INV-1120', description: 'Q1 security services', amount: 3240000, paid: 3240000, balance: 0, status: 'Paid', due: '2026-04-10' },
-  { id: 'BILL-005', date: '2026-04-02', supplier: 'UMEME', ref: 'INV-6643', description: 'Feb-Mar electricity bill', amount: 1620000, paid: 0, balance: 1620000, status: 'Overdue', due: '2026-04-01' },
-  { id: 'BILL-006', date: '2026-04-01', supplier: 'CleanPro Uganda', ref: 'INV-3389', description: 'Cleaning supplies', amount: 1080000, paid: 540000, balance: 540000, status: 'Partial', due: '2026-04-25' },
-];
+/* ── Data from SQLite ── */
+function useAPData(search?: string, ver?: number) {
+  const { isReady } = useDB();
+  const raw = useMemo(() => isReady ? APService.listBills() : [], [isReady, ver]);
+  return useMemo(() => raw.map((b: any) => ({
+    id: b.id,
+    date: (b.invoice_date || '').slice(0, 10),
+    supplier: b.supplier_name || '',
+    ref: b.invoice_number || '',
+    description: b.description || '',
+    amount: Number(b.total_amount) || 0,
+    paid: Number(b.paid_amount) || 0,
+    balance: Number(b.balance) || 0,
+    status: b.status === 'paid' ? 'Paid' : b.status === 'partial' ? 'Partial' : b.status === 'overdue' ? 'Overdue' : 'Pending',
+    due: (b.due_date || '').slice(0, 10),
+  })), [raw]);
+}
 
 const apTrend = [
   { month: 'Nov', amount: 780000 },
@@ -35,6 +47,25 @@ const categoryBreakdown = [
 export default function APPage() {
   const [period, setPeriod] = useState<'30' | '90' | 'currentFY' | 'lastFY' | 'all'>('30');
   const [search, setSearch] = useState('');
+  const [ver, setVer] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ supplier_name: '', description: '', total_amount: '', due_date: '' });
+  const { isReady } = useDB();
+  const suppliers = useMemo(() => isReady ? APService.listSuppliers() : [], [isReady, ver]);
+
+  const bills = useAPData(search, ver);
+
+  const handleSubmit = useCallback(() => {
+    if (!form.total_amount || !form.due_date) return;
+    let supplierId = suppliers.find((s: any) => s.name === form.supplier_name)?.id;
+    if (!supplierId && form.supplier_name) {
+      supplierId = APService.createSupplier({ name: form.supplier_name });
+    }
+    APService.createBill({ supplier_id: supplierId || '', invoice_number: `BILL-${Date.now().toString().slice(-6)}`, invoice_date: new Date().toISOString().split('T')[0], due_date: form.due_date, total_amount: Number(form.total_amount), notes: form.description });
+    setShowForm(false);
+    setForm({ supplier_name: '', description: '', total_amount: '', due_date: '' });
+    setVer(v => v + 1);
+  }, [form, suppliers]);
 
   const filtered = bills.filter(
     (b) => b.supplier.toLowerCase().includes(search.toLowerCase()) || b.id.toLowerCase().includes(search.toLowerCase())
@@ -53,7 +84,7 @@ export default function APPage() {
             <button key={v} onClick={() => setPeriod(v as any)} style={{ padding: '6px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500, border: 'none', cursor: 'pointer', background: period === v ? 'rgba(255,255,255,0.12)' : 'transparent', color: period === v ? 'var(--text-primary)' : 'var(--text-muted)' }}>{l}</button>
           ))}
         </div>
-        <button style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
+        <button onClick={() => setShowForm(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 10, background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 0 20px rgba(59,130,246,0.2)' }}>
           + New Bill
         </button>
       </div>
@@ -150,6 +181,21 @@ export default function APPage() {
           </table>
         </div>
       </div>
+
+      {showForm && (
+        <FormModal title="New Supplier Bill" onClose={() => setShowForm(false)} onSubmit={handleSubmit} submitLabel="Create Bill">
+          <div style={fieldFull}>
+            <label style={fieldLabel}>Supplier</label>
+            <input list="supplier-list" style={fieldInput} value={form.supplier_name} onChange={e => setForm({ ...form, supplier_name: e.target.value })} placeholder="Type or select supplier" />
+            <datalist id="supplier-list">{suppliers.map((s: any) => <option key={s.id} value={s.name} />)}</datalist>
+          </div>
+          <div style={fieldFull}><label style={fieldLabel}>Description</label><input style={fieldInput} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="e.g. Food supplies for March" /></div>
+          <div style={fieldRow}>
+            <div><label style={fieldLabel}>Amount (UGX) *</label><input type="number" style={fieldInput} value={form.total_amount} onChange={e => setForm({ ...form, total_amount: e.target.value })} /></div>
+            <div><label style={fieldLabel}>Due Date *</label><input type="date" style={fieldInput} value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></div>
+          </div>
+        </FormModal>
+      )}
     </div>
   );
 }
